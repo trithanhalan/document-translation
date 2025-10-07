@@ -9,6 +9,9 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarGroupContent,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
 } from '@/components/ui/sidebar';
 import { Logo } from './logo';
 import { cn } from '@/lib/utils';
@@ -24,15 +27,18 @@ import { Button } from './ui/button';
 import { summarizeContext } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
 import { sampleDocument, sampleGlossary } from '@/lib/data';
-import { Loader2, FileText, Download, BookMarked, MessageSquareQuote } from 'lucide-react';
+import { Loader2, FileText, Download, BookMarked, MessageSquareQuote, FileUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export function AppSidebar() {
   const { toast } = useToast();
   const [isSummarizing, startSummarizeTransition] = useTransition();
   const [summary, setSummary] = useState('');
+  const pathname = usePathname();
 
   const handleSummarize = async () => {
     startSummarizeTransition(async () => {
@@ -108,6 +114,23 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <ScrollArea className="h-full">
+            <SidebarMenu>
+                <SidebarMenuItem>
+                    <Link href="/" passHref legacyBehavior>
+                        <SidebarMenuButton isActive={pathname === '/'} asChild>
+                            <a><FileText/> Segment-by-Segment</a>
+                        </SidebarMenuButton>
+                    </Link>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                    <Link href="/translate" passHref legacyBehavior>
+                        <SidebarMenuButton isActive={pathname === '/translate'} asChild>
+                            <a><FileUp/> Upload & Translate</a>
+                        </SidebarMenuButton>
+                    </Link>
+                </SidebarMenuItem>
+            </SidebarMenu>
+          <Separator className="my-2" />
           <SidebarGroup>
             <SidebarGroupLabel className="flex items-center gap-2">
               <FileText className="size-4" />

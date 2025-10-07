@@ -13,3 +13,21 @@ export type Document = {
   title: string;
   segments: Segment[];
 };
+
+export type TranslationTaskStatus =
+  | 'pending'
+  | 'uploading'
+  | 'processing'
+  | 'review'
+  | 'completed'
+  | 'failed';
+
+export type TranslationTask = {
+  id: string;
+  fileName: string;
+  status: TranslationTaskStatus;
+  progress: number;
+  createdAt: string;
+  sourceLang: string;
+  targetLang: string;
+};
