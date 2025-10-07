@@ -116,16 +116,16 @@ export function AppSidebar() {
         <ScrollArea className="h-full">
             <SidebarMenu>
                 <SidebarMenuItem>
-                    <Link href="/" passHref legacyBehavior>
+                    <Link href="/" passHref>
                         <SidebarMenuButton isActive={pathname === '/'} asChild>
-                            <a><FileText/> Segment-by-Segment</a>
+                            <span><FileText/> Segment-by-Segment</span>
                         </SidebarMenuButton>
                     </Link>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
-                    <Link href="/translate" passHref legacyBehavior>
+                    <Link href="/translate" passHref>
                         <SidebarMenuButton isActive={pathname === '/translate'} asChild>
-                            <a><FileUp/> Upload & Translate</a>
+                           <span><FileUp/> Upload & Translate</span>
                         </SidebarMenuButton>
                     </Link>
                 </SidebarMenuItem>
