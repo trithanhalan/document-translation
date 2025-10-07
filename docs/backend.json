@@ -1,0 +1,157 @@
+{
+  "entities": {
+    "TranslationTask": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TranslationTask",
+      "type": "object",
+      "description": "Represents a document translation task.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the translation task."
+        },
+        "status": {
+          "type": "string",
+          "description": "Current status of the translation task (e.g., 'uploading', 'processing', 'completed', 'error')."
+        },
+        "progress": {
+          "type": "number",
+          "description": "Progress percentage of the translation task (0-100)."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the task was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the task was last updated.",
+          "format": "date-time"
+        },
+        "srcLang": {
+          "type": "string",
+          "description": "Source language code (ISO 639-1)."
+        },
+        "tgtLang": {
+          "type": "string",
+          "description": "Target language code (ISO 639-1)."
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Original name of the uploaded file."
+        },
+        "ownerUid": {
+          "type": "string",
+          "description": "User ID of the task owner."
+        },
+        "errors": {
+          "type": "array",
+          "description": "Array of error messages encountered during the translation process.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "description": "Array of references to the translated output files (e.g., DOCX, PDF, TXT).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "glossaryId": {
+          "type": "string",
+          "description": "Reference to Glossary used for this translation task. (Relationship: TranslationTask 1:1 Glossary)"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "progress",
+        "createdAt",
+        "updatedAt",
+        "srcLang",
+        "tgtLang",
+        "fileName",
+        "ownerUid"
+      ]
+    },
+    "Glossary": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Glossary",
+      "type": "object",
+      "description": "Represents a glossary of terms used for translation.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the glossary."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the glossary."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the glossary."
+        },
+        "terms": {
+          "type": "array",
+          "description": "Array of glossary terms.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}/translationTasks/{taskId}",
+        "definition": {
+          "entityName": "TranslationTask",
+          "schema": {
+            "$ref": "#/backend/entities/TranslationTask"
+          },
+          "description": "Stores translation tasks associated with a user. Path-based ownership ensures only the user can access these tasks.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The ID of the user who owns the translation task."
+            },
+            {
+              "name": "taskId",
+              "description": "The ID of the translation task."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/glossaries/{glossaryId}",
+        "definition": {
+          "entityName": "Glossary",
+          "schema": {
+            "$ref": "#/backend/entities/Glossary"
+          },
+          "description": "Stores the glossary information.  Consider adding ownerUid and using /users/{userId}/glossaries/{glossaryId} if glossaries must be private. Now the glossaries are public.",
+          "params": [
+            {
+              "name": "glossaryId",
+              "description": "The ID of the glossary."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to ensure authorization independence, clarity, and scalability for the document translation workflow. It leverages path-based ownership for user-specific data and denormalization where necessary to avoid `get()` calls in security rules. All documents within a collection share the same security posture.\n\n*   `/users/{userId}/translationTasks/{taskId}`: This structure establishes clear ownership. Each task is directly associated with a specific user, simplifying security rules based on `request.auth.uid`.\n\nQAPs Support:\n\n*   Secure `list` operations are supported through path-based ownership. A user can only list tasks within their own `/users/{userId}/translationTasks` collection.\n\nAuthorization Independence:\n\n*   Since the `TranslationTask` documents are stored under the user's path (`/users/{userId}/translationTasks/{taskId}`), authorization depends solely on the path and `request.auth.uid`, eliminating the need for `get()` calls to parent documents."
+  }
+}
