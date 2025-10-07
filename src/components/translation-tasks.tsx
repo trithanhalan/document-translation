@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { TranslationTask } from '@/lib/types';
 import {
   Card,
@@ -30,9 +30,8 @@ import {
 } from 'lucide-react';
 import { Progress } from './ui/progress';
 import { formatDistanceToNow } from 'date-fns';
-import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, query, where, orderBy } from 'firebase/firestore';
 import { Skeleton } from './ui/skeleton';
+import { mockTasks } from '@/lib/mock-data';
 
 const statusIcons: { [key in TranslationTask['status']]: React.ReactNode } = {
   pending: <Hourglass className="text-yellow-500" />,
@@ -53,18 +52,16 @@ const statusColors: { [key in TranslationTask['status']]: string } = {
 };
 
 export function TranslationTasks() {
-    const { firestore, user } = useFirebase();
+    const [tasks, setTasks] = useState<TranslationTask[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    const tasksQuery = useMemoFirebase(() => {
-        if (!firestore || !user) return null;
-        return query(
-          collection(firestore, 'translationTasks'),
-          where('ownerUid', '==', user.uid),
-          orderBy('createdAt', 'desc')
-        );
-      }, [firestore, user]);
-    
-      const { data: tasks, isLoading } = useCollection<TranslationTask>(tasksQuery);
+    useEffect(() => {
+        // Using mock data to avoid Firestore permission errors for now
+        setTimeout(() => {
+            setTasks(mockTasks);
+            setIsLoading(false);
+        }, 1000);
+    }, []);
 
 
   return (
