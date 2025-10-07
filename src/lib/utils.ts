@@ -18,17 +18,13 @@ export function highlightText(
   const termRegex = new RegExp(`(${terms.map(t => t.term).join('|')})`, 'gi');
   const parts = text.split(termRegex);
 
-  return (
-    <>
-      {parts.map((part, index) =>
-        termRegex.test(part) ? (
-          <mark key={index} className={className}>
-            {part}
-          </mark>
-        ) : (
-          part
-        )
-      )}
-    </>
+  return React.createElement(
+    React.Fragment,
+    null,
+    ...parts.map((part, index) =>
+      termRegex.test(part)
+        ? React.createElement('mark', { key: index, className: className }, part)
+        : part
+    )
   );
 }
