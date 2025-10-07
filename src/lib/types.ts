@@ -1,3 +1,4 @@
+
 export type Segment = {
   id: number;
   sourceText: string;
@@ -27,8 +28,10 @@ export type TranslationTask = {
   fileName: string;
   status: TranslationTaskStatus;
   progress: number;
-  createdAt: string;
+  createdAt: string; // Should be ISO string
   sourceLang: string;
   targetLang: string;
   ownerUid: string;
+  errors?: string[];
+  outputs?: Record<string, string>;
 };

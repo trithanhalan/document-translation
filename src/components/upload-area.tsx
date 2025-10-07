@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
@@ -13,26 +14,33 @@ import { Button } from "@/components/ui/button";
 import { FileUp, File, X, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
-import { useFirebase } from "@/firebase";
+import { useFirebase, initiateAnonymousSignIn } from "@/firebase";
 import { getStorage, ref, uploadBytesResumable, UploadTask } from "firebase/storage";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { LANGUAGES } from "@/lib/constants";
 
 export function UploadArea() {
   const { toast } = useToast();
-  const { firestore, user } = useFirebase();
+  const { firestore, user, auth } = useFirebase();
   const [files, setFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadTask, setUploadTask] = useState<UploadTask | null>(null);
+  const [sourceLang, setSourceLang] = useState("en");
+  const [targetLang, setTargetLang] = useState("de");
+
 
   useEffect(() => {
     // Sign in anonymously if no user is present
-    // This is a placeholder for a proper auth flow
-    if (!user) {
-        // You would typically have a sign-in flow here
-        console.log("No user found, this would be where you sign in.")
+    if (!user && auth) {
+      initiateAnonymousSignIn(auth);
+      toast({
+        title: "Signed In",
+        description: "You are signed in anonymously.",
+      });
     }
-  }, [user]);
+  }, [user, auth, toast]);
 
   const onDrop = useCallback(
     (acceptedFiles: File[], fileRejections: any[]) => {
@@ -93,8 +101,8 @@ export function UploadArea() {
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             ownerUid: user.uid,
-            sourceLang: 'en', // Placeholder
-            targetLang: 'de', // Placeholder
+            sourceLang: sourceLang, 
+            targetLang: targetLang,
         });
 
         const taskId = taskDocRef.id;
@@ -110,6 +118,7 @@ export function UploadArea() {
             (snapshot) => {
                 const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
                 setUploadProgress(progress);
+                updateDoc(taskDocRef, { progress: Math.round(progress * 0.5) }); // Upload is 50% of total
             },
             (error) => {
                 console.error("Upload failed:", error);
@@ -118,6 +127,7 @@ export function UploadArea() {
                     title: "Upload Failed",
                     description: "An error occurred while uploading the file.",
                 });
+                updateDoc(taskDocRef, { status: 'failed', errors: ['Upload failed'] });
                 setIsUploading(false);
             },
             () => {
@@ -126,6 +136,7 @@ export function UploadArea() {
                     title: "Upload Complete",
                     description: `${file.name} is now queued for processing.`,
                 });
+                updateDoc(taskDocRef, { status: 'pending', progress: 50 });
                 setIsUploading(false);
                 setFiles([]);
                 setUploadTask(null);
@@ -186,6 +197,43 @@ export function UploadArea() {
           </div>
         ) : (
           <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">
+                  Source Language
+                </label>
+                <Select value={sourceLang} onValueChange={setSourceLang}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select language" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LANGUAGES.map((lang) => (
+                      <SelectItem key={lang.value} value={lang.value}>
+                        {lang.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">
+                  Target Language
+                </label>
+                <Select value={targetLang} onValueChange={setTargetLang}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select language" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LANGUAGES.map((lang) => (
+                      <SelectItem key={lang.value} value={lang.value}>
+                        {lang.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             {files.map((file) => (
               <div
                 key={file.name}
@@ -202,6 +250,7 @@ export function UploadArea() {
                 )}
               </div>
             ))}
+
             {isUploading && (
               <div>
                 <Progress value={uploadProgress} className="w-full" />
