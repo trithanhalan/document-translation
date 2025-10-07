@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import type { TranslationTask } from '@/lib/types';
 import {
   Card,
@@ -30,10 +30,9 @@ import {
 } from 'lucide-react';
 import { Progress } from './ui/progress';
 import { formatDistanceToNow } from 'date-fns';
-
-interface TranslationTasksProps {
-  tasks: TranslationTask[];
-}
+import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
+import { collection, query, where, orderBy } from 'firebase/firestore';
+import { Skeleton } from './ui/skeleton';
 
 const statusIcons: { [key in TranslationTask['status']]: React.ReactNode } = {
   pending: <Hourglass className="text-yellow-500" />,
@@ -53,7 +52,21 @@ const statusColors: { [key in TranslationTask['status']]: string } = {
   failed: 'bg-red-500/10 text-red-600 border-red-500/20',
 };
 
-export function TranslationTasks({ tasks }: TranslationTasksProps) {
+export function TranslationTasks() {
+    const { firestore, user } = useFirebase();
+
+    const tasksQuery = useMemoFirebase(() => {
+        if (!firestore || !user) return null;
+        return query(
+          collection(firestore, 'translationTasks'),
+          where('ownerUid', '==', user.uid),
+          orderBy('createdAt', 'desc')
+        );
+      }, [firestore, user]);
+    
+      const { data: tasks, isLoading } = useCollection<TranslationTask>(tasksQuery);
+
+
   return (
     <Card className="shadow-lg border-0">
       <CardHeader>
@@ -75,7 +88,19 @@ export function TranslationTasks({ tasks }: TranslationTasksProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {tasks.map((task) => (
+            {isLoading && (
+                Array.from({ length: 3 }).map((_, i) => (
+                    <TableRow key={i}>
+                        <TableCell><Skeleton className="h-5 w-48" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                        <TableCell className="text-right"><Skeleton className="h-8 w-24" /></TableCell>
+                    </TableRow>
+                ))
+            )}
+            {!isLoading && tasks && tasks.map((task) => (
               <TableRow key={task.id}>
                 <TableCell className="font-medium">{task.fileName}</TableCell>
                 <TableCell>
@@ -100,9 +125,9 @@ export function TranslationTasks({ tasks }: TranslationTasksProps) {
                   </div>
                 </TableCell>
                 <TableCell>
-                  {formatDistanceToNow(new Date(task.createdAt), {
+                  {task.createdAt ? formatDistanceToNow(new Date(task.createdAt), {
                     addSuffix: true,
-                  })}
+                  }) : 'Just now'}
                 </TableCell>
                 <TableCell className="text-right">
                   {task.status === 'completed' && (
@@ -120,6 +145,13 @@ export function TranslationTasks({ tasks }: TranslationTasksProps) {
                 </TableCell>
               </TableRow>
             ))}
+            {!isLoading && (!tasks || tasks.length === 0) && (
+                <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground h-24">
+                        No translation jobs found. Upload a document to get started.
+                    </TableCell>
+                </TableRow>
+            )}
           </TableBody>
         </Table>
       </CardContent>

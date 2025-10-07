@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import {
   Card,
@@ -13,37 +13,56 @@ import { Button } from "@/components/ui/button";
 import { FileUp, File, X, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
+import { useFirebase } from "@/firebase";
+import { getStorage, ref, uploadBytesResumable, UploadTask } from "firebase/storage";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 export function UploadArea() {
   const { toast } = useToast();
+  const { firestore, user } = useFirebase();
   const [files, setFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadTask, setUploadTask] = useState<UploadTask | null>(null);
 
-  const onDrop = useCallback((acceptedFiles: File[], fileRejections: any[]) => {
-    if (fileRejections.length > 0) {
-      toast({
-        variant: "destructive",
-        title: "File upload error",
-        description: fileRejections[0].errors[0].message,
-      });
-      return;
+  useEffect(() => {
+    // Sign in anonymously if no user is present
+    // This is a placeholder for a proper auth flow
+    if (!user) {
+        // You would typically have a sign-in flow here
+        console.log("No user found, this would be where you sign in.")
     }
-    setFiles(acceptedFiles);
-  }, [toast]);
+  }, [user]);
+
+  const onDrop = useCallback(
+    (acceptedFiles: File[], fileRejections: any[]) => {
+      if (fileRejections.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "File upload error",
+          description: fileRejections[0].errors[0].message,
+        });
+        return;
+      }
+      setFiles(acceptedFiles);
+    },
+    [toast]
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
       "application/pdf": [".pdf"],
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
+        ".docx",
+      ],
       "text/plain": [".txt"],
     },
     maxSize: 50 * 1024 * 1024, // 50 MB
     multiple: false,
   });
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (files.length === 0) {
       toast({
         variant: "destructive",
@@ -52,44 +71,101 @@ export function UploadArea() {
       });
       return;
     }
+    if (!user) {
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "You must be logged in to upload files.",
+        });
+        return;
+      }
 
     setIsUploading(true);
     setUploadProgress(0);
+    const file = files[0];
 
-    // Mock upload progress
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 95) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 200);
+    try {
+        // 1. Create a task document in Firestore
+        const taskDocRef = await addDoc(collection(firestore, "translationTasks"), {
+            fileName: file.name,
+            status: 'uploading',
+            progress: 0,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            ownerUid: user.uid,
+            sourceLang: 'en', // Placeholder
+            targetLang: 'de', // Placeholder
+        });
 
-    setTimeout(() => {
-      clearInterval(interval);
-      setUploadProgress(100);
-      setIsUploading(false);
-      toast({
-        title: "Upload Complete (Mock)",
-        description: `${files[0].name} is now being processed.`,
-      });
-      setFiles([]);
-    }, 2500);
+        const taskId = taskDocRef.id;
+
+        // 2. Upload the file to Firebase Storage
+        const storage = getStorage();
+        const storageRef = ref(storage, `uploads/${taskId}/${file.name}`);
+        const task = uploadBytesResumable(storageRef, file);
+        setUploadTask(task);
+
+        task.on(
+            "state_changed",
+            (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                setUploadProgress(progress);
+            },
+            (error) => {
+                console.error("Upload failed:", error);
+                toast({
+                    variant: "destructive",
+                    title: "Upload Failed",
+                    description: "An error occurred while uploading the file.",
+                });
+                setIsUploading(false);
+            },
+            () => {
+                // 3. On successful upload
+                toast({
+                    title: "Upload Complete",
+                    description: `${file.name} is now queued for processing.`,
+                });
+                setIsUploading(false);
+                setFiles([]);
+                setUploadTask(null);
+            }
+        );
+
+    } catch (error) {
+        console.error("Error creating translation task:", error);
+        toast({
+          variant: "destructive",
+          title: "Task Creation Failed",
+          description: "Could not create the translation task in the database.",
+        });
+        setIsUploading(false);
+    }
   };
-  
+
   const removeFile = () => {
     setFiles([]);
   };
 
+  const cancelUpload = () => {
+    if (uploadTask) {
+        uploadTask.cancel();
+        setIsUploading(false);
+        setUploadProgress(0);
+        setFiles([]);
+        toast({ title: "Upload Canceled" });
+    }
+  }
+
   return (
     <Card className="shadow-lg border-0">
       <CardHeader>
-        <CardTitle className="font-headline text-3xl tracking-tight text-foreground">Upload Document</CardTitle>
+        <CardTitle className="font-headline text-3xl tracking-tight text-foreground">
+          Upload Document
+        </CardTitle>
         <CardDescription className="text-base text-muted-foreground">
-          Drag and drop your document here or click to browse. Supported formats:
-          PDF, DOCX, TXT. Max file size: 50MB.
+          Drag and drop your document here or click to browse. Supported
+          formats: PDF, DOCX, TXT. Max file size: 50MB.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -97,7 +173,9 @@ export function UploadArea() {
           <div
             {...getRootProps()}
             className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
-              isDragActive ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"
+              isDragActive
+                ? "border-primary bg-primary/10"
+                : "border-border hover:border-primary/50"
             }`}
           >
             <input {...getInputProps()} />
@@ -127,19 +205,24 @@ export function UploadArea() {
             {isUploading && (
               <div>
                 <Progress value={uploadProgress} className="w-full" />
-                <p className="text-sm text-muted-foreground mt-2 text-center">Uploading... {Math.round(uploadProgress)}%</p>
+                <p className="text-sm text-muted-foreground mt-2 text-center">
+                  Uploading... {Math.round(uploadProgress)}%
+                </p>
               </div>
             )}
             {!isUploading && files.length > 0 && (
-              <Button onClick={handleUpload} className="w-full sm:w-auto">
+              <Button onClick={handleUpload} className="w-full sm:w-auto" disabled={!user}>
                 Start Translation
               </Button>
             )}
             {isUploading && (
+              <div className="flex gap-2">
                 <Button disabled className="w-full sm:w-auto">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Uploading...
                 </Button>
+                <Button onClick={cancelUpload} variant="outline">Cancel</Button>
+              </div>
             )}
           </div>
         )}

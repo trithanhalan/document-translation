@@ -9,6 +9,7 @@ export const mockTasks: TranslationTask[] = [
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     sourceLang: 'en',
     targetLang: 'de',
+    ownerUid: 'mock-user-id',
   },
   {
     id: 'task-2',
@@ -18,6 +19,7 @@ export const mockTasks: TranslationTask[] = [
     createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
     sourceLang: 'en',
     targetLang: 'fr',
+    ownerUid: 'mock-user-id',
   },
   {
     id: 'task-3',
@@ -27,6 +29,7 @@ export const mockTasks: TranslationTask[] = [
     createdAt: new Date().toISOString(),
     sourceLang: 'en',
     targetLang: 'ja',
+    ownerUid: 'mock-user-id',
   },
   {
     id: 'task-4',
@@ -36,6 +39,7 @@ export const mockTasks: TranslationTask[] = [
     createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     sourceLang: 'es',
     targetLang: 'en',
+    ownerUid: 'mock-user-id',
   },
     {
     id: 'task-5',
@@ -45,5 +49,6 @@ export const mockTasks: TranslationTask[] = [
     createdAt: new Date().toISOString(),
     sourceLang: 'en',
     targetLang: 'it',
+    ownerUid: 'mock-user-id',
   },
 ];

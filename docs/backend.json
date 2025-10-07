@@ -1,7 +1,6 @@
 {
   "entities": {
     "TranslationTask": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "TranslationTask",
       "type": "object",
       "description": "Represents a document translation task.",
@@ -76,7 +75,6 @@
       ]
     },
     "Glossary": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Glossary",
       "type": "object",
       "description": "Represents a glossary of terms used for translation.",
@@ -114,44 +112,17 @@
     ]
   },
   "firestore": {
-    "structure": [
-      {
-        "path": "/users/{userId}/translationTasks/{taskId}",
-        "definition": {
-          "entityName": "TranslationTask",
-          "schema": {
-            "$ref": "#/backend/entities/TranslationTask"
-          },
-          "description": "Stores translation tasks associated with a user. Path-based ownership ensures only the user can access these tasks.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The ID of the user who owns the translation task."
-            },
-            {
-              "name": "taskId",
-              "description": "The ID of the translation task."
-            }
-          ]
-        }
+    "/translationTasks/{taskId}": {
+      "schema": {
+        "$ref": "#/entities/TranslationTask"
       },
-      {
-        "path": "/glossaries/{glossaryId}",
-        "definition": {
-          "entityName": "Glossary",
-          "schema": {
-            "$ref": "#/backend/entities/Glossary"
-          },
-          "description": "Stores the glossary information.  Consider adding ownerUid and using /users/{userId}/glossaries/{glossaryId} if glossaries must be private. Now the glossaries are public.",
-          "params": [
-            {
-              "name": "glossaryId",
-              "description": "The ID of the glossary."
-            }
-          ]
-        }
-      }
-    ],
-    "reasoning": "The Firestore data structure is designed to ensure authorization independence, clarity, and scalability for the document translation workflow. It leverages path-based ownership for user-specific data and denormalization where necessary to avoid `get()` calls in security rules. All documents within a collection share the same security posture.\n\n*   `/users/{userId}/translationTasks/{taskId}`: This structure establishes clear ownership. Each task is directly associated with a specific user, simplifying security rules based on `request.auth.uid`.\n\nQAPs Support:\n\n*   Secure `list` operations are supported through path-based ownership. A user can only list tasks within their own `/users/{userId}/translationTasks` collection.\n\nAuthorization Independence:\n\n*   Since the `TranslationTask` documents are stored under the user's path (`/users/{userId}/translationTasks/{taskId}`), authorization depends solely on the path and `request.auth.uid`, eliminating the need for `get()` calls to parent documents."
+      "description": "Stores translation tasks. Access is restricted to the owner of the task."
+    },
+    "/glossaries/{glossaryId}": {
+      "schema": {
+        "$ref": "#/entities/Glossary"
+      },
+      "description": "Stores glossaries. Currently public, but could be restricted by adding an ownerUid."
+    }
   }
 }

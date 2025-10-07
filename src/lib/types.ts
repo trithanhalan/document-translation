@@ -30,4 +30,5 @@ export type TranslationTask = {
   createdAt: string;
   sourceLang: string;
   targetLang: string;
+  ownerUid: string;
 };
