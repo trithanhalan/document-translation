@@ -1,4 +1,6 @@
 
+import type { Timestamp } from 'firebase/firestore';
+
 export type Segment = {
   id: number;
   sourceText: string;
@@ -28,9 +30,10 @@ export type TranslationTask = {
   fileName: string;
   status: TranslationTaskStatus;
   progress: number;
-  createdAt: string; // Should be ISO string
-  sourceLang: string;
-  targetLang: string;
+  createdAt: Timestamp | string; // serverTimestamp can result in Timestamp
+  updatedAt: Timestamp | string;
+  srcLang: string;
+  tgtLang: string;
   ownerUid: string;
   errors?: string[];
   outputs?: Record<string, string>;

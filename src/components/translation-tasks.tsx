@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import type { TranslationTask } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, query, where, Timestamp } from 'firebase/firestore';
 import {
   Card,
   CardContent,
@@ -52,6 +52,20 @@ const statusColors: { [key in TranslationTask['status']]: string } = {
   failed: 'bg-red-500/10 text-red-600 border-red-500/20',
 };
 
+// Helper to convert Firestore Timestamp to JS Date
+const toDate = (timestamp: Timestamp | string | Date): Date | null => {
+  if (timestamp instanceof Timestamp) {
+    return timestamp.toDate();
+  }
+  if (typeof timestamp === 'string' || timestamp instanceof Date) {
+    const d = new Date(timestamp);
+    if (!isNaN(d.getTime())) {
+      return d;
+    }
+  }
+  return null;
+};
+
 export function TranslationTasks() {
   const { firestore, user } = useFirebase();
 
@@ -98,14 +112,16 @@ export function TranslationTasks() {
                     </TableRow>
                 ))
             )}
-            {!isLoading && tasks && tasks.map((task) => (
+            {!isLoading && tasks && tasks.map((task) => {
+              const createdAtDate = toDate(task.createdAt as any);
+              return (
               <TableRow key={task.id}>
                 <TableCell className="font-medium">{task.fileName}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline">{task.sourceLang.toUpperCase()}</Badge>
+                    <Badge variant="outline">{(task.srcLang || '').toUpperCase()}</Badge>
                     <span>→</span>
-                    <Badge variant="outline">{task.targetLang.toUpperCase()}</Badge>
+                    <Badge variant="outline">{(task.tgtLang || '').toUpperCase()}</Badge>
                   </div>
                 </TableCell>
                 <TableCell>
@@ -123,7 +139,7 @@ export function TranslationTasks() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  {task.createdAt ? formatDistanceToNow(new Date(task.createdAt), {
+                  {createdAtDate ? formatDistanceToNow(createdAtDate, {
                     addSuffix: true,
                   }) : 'Just now'}
                 </TableCell>
@@ -142,7 +158,7 @@ export function TranslationTasks() {
                   )}
                 </TableCell>
               </TableRow>
-            ))}
+            )})}
             {!isLoading && (!tasks || tasks.length === 0) && (
                 <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground h-24">
