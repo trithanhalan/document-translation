@@ -37,7 +37,9 @@ class TranslationService:
     @lru_cache(maxsize=1024)
     def _translate_batch(self, texts: tuple[str, ...]) -> list[str]:
         """Helper to translate a batch of texts using the local Marian model."""
-        if not self.model or not self.tokenizer:
+        if self.use_llm_fallback or not self.model or not self.tokenizer:
+            # If LLM is forced or local model is not available, this method should not be called
+            # but as a safeguard, we return mock translations.
             return [self._mock_translate(text) for text in texts]
             
         try:

@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { useFirebase, initiateAnonymousSignIn, addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase";
 import { getStorage, ref, uploadBytesResumable, UploadTask, UploadTaskSnapshot } from "firebase/storage";
-import { collection, serverTimestamp, doc, DocumentReference } from "firebase/firestore";
+import { collection, serverTimestamp, doc, DocumentReference, updateDoc } from "firebase/firestore";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { LANGUAGES } from "@/lib/constants";
 
@@ -114,7 +114,12 @@ export function UploadArea() {
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
         setUploadProgress(progress);
         const progressDocRef = doc(firestore, "translationTasks", taskId);
-        updateDocumentNonBlocking(progressDocRef, { progress: Math.round(progress * 0.2) }); // Upload is 20% of the work
+        // Use awaited updateDoc for better reliability on progress updates
+        try {
+            updateDoc(progressDocRef, { progress: Math.round(progress * 0.2) }); // Upload is 20% of the work
+        } catch (e) {
+            console.warn("Could not update progress", e);
+        }
       },
       (error: any) => {
         console.error("Upload failed:", error);
@@ -316,5 +321,3 @@ export function UploadArea() {
     </Card>
   );
 }
-
-    

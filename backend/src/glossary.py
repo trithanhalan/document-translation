@@ -56,7 +56,7 @@ class GlossaryService:
             logger.error(f"Failed to import from CSV {csv_path}. Error: {e}")
 
     def find_terms_in_text(self, text, target_lang):
-        conn = self._get Conn()
+        conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute("SELECT source_term, target_term FROM terms WHERE target_lang = ?", (target_lang,))
         all_terms = cursor.fetchall()
@@ -92,7 +92,6 @@ class GlossaryService:
 
     def revert_glossary_placeholders(self, translated_text: str, replacements: dict):
         """
-CNF-B-2616
         Replaces the placeholders in the translated text with their
         correct target glossary terms.
         """
@@ -118,5 +117,3 @@ if __name__ == '__main__':
         print(f"Importing terms from {args.import_csv}...")
         service.bulk_import_from_csv(args.import_csv)
         print("Import complete.")
-
-    
