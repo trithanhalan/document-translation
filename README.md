@@ -44,8 +44,8 @@ LinguaFlow is a decoupled, full-stack application. The frontend is a Next.js app
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/james-hoang-88/Document-Translation.git
-    cd Document-Translation
+    git clone https://github.com/your-username/linguaflow.git
+    cd linguaflow
     ```
 
 2.  **Set up environment variables:**
@@ -120,5 +120,3 @@ LinguaFlow/
 ├── storage.rules       # Cloud Storage security rules
 └── package.json
 ```
-
-    
