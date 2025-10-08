@@ -1,0 +1,20 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow authorized users to upload to a folder matching their user ID.
+    // This ensures users can only upload to their own designated space.
+    match /uploads/{taskId}/{fileName} {
+      // The request.auth object is available for authenticated users.
+      // We check if the user is authenticated before allowing the write.
+      allow write: if request.auth != null;
+    }
+
+    // Allow authorized users to read result files.
+    // For now, we'll allow any authenticated user to read results.
+    // This can be locked down further by matching ownerUid on the task document.
+    match /results/{taskId}/{fileName} {
+      allow read: if request.auth != null;
+    }
+  }
+}

@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { useFirebase, initiateAnonymousSignIn } from "@/firebase";
 import { getStorage, ref, uploadBytesResumable, UploadTask } from "firebase/storage";
-import { collection, addDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, updateDoc, doc, DocumentReference } from "firebase/firestore";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { LANGUAGES } from "@/lib/constants";
 
@@ -35,10 +35,6 @@ export function UploadArea() {
     // Sign in anonymously if no user is present
     if (!user && auth) {
       initiateAnonymousSignIn(auth);
-      toast({
-        title: "Signed In",
-        description: "You are signed in anonymously.",
-      });
     }
   }, [user, auth, toast]);
 
@@ -91,10 +87,12 @@ export function UploadArea() {
     setIsUploading(true);
     setUploadProgress(0);
     const file = files[0];
+    
+    let taskDocRef: DocumentReference;
 
     try {
         // 1. Create a task document in Firestore
-        const taskDocRef = await addDoc(collection(firestore, "translationTasks"), {
+        taskDocRef = await addDoc(collection(firestore, "translationTasks"), {
             fileName: file.name,
             status: 'uploading',
             progress: 0,
@@ -104,45 +102,6 @@ export function UploadArea() {
             sourceLang: sourceLang, 
             targetLang: targetLang,
         });
-
-        const taskId = taskDocRef.id;
-
-        // 2. Upload the file to Firebase Storage
-        const storage = getStorage();
-        const storageRef = ref(storage, `uploads/${taskId}/${file.name}`);
-        const task = uploadBytesResumable(storageRef, file);
-        setUploadTask(task);
-
-        task.on(
-            "state_changed",
-            (snapshot) => {
-                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                setUploadProgress(progress);
-                updateDoc(taskDocRef, { progress: Math.round(progress * 0.5) }); // Upload is 50% of total
-            },
-            (error) => {
-                console.error("Upload failed:", error);
-                toast({
-                    variant: "destructive",
-                    title: "Upload Failed",
-                    description: "An error occurred while uploading the file.",
-                });
-                updateDoc(taskDocRef, { status: 'failed', errors: ['Upload failed'] });
-                setIsUploading(false);
-            },
-            () => {
-                // 3. On successful upload
-                toast({
-                    title: "Upload Complete",
-                    description: `${file.name} is now queued for processing.`,
-                });
-                updateDoc(taskDocRef, { status: 'pending', progress: 50 });
-                setIsUploading(false);
-                setFiles([]);
-                setUploadTask(null);
-            }
-        );
-
     } catch (error) {
         console.error("Error creating translation task:", error);
         toast({
@@ -151,7 +110,54 @@ export function UploadArea() {
           description: "Could not create the translation task in the database.",
         });
         setIsUploading(false);
+        return;
     }
+    
+    const taskId = taskDocRef.id;
+
+    // 2. Upload the file to Firebase Storage
+    const storage = getStorage();
+    const storageRef = ref(storage, `uploads/${taskId}/${file.name}`);
+    const task = uploadBytesResumable(storageRef, file);
+    setUploadTask(task);
+
+    task.on(
+        "state_changed",
+        (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            setUploadProgress(progress);
+            // This doc() call might fail if rules aren't set up for update, but it's just for progress.
+            const progressDocRef = doc(firestore, "translationTasks", taskId);
+            updateDoc(progressDocRef, { progress: Math.round(progress * 0.5) }).catch(err => {
+              console.warn("Could not update progress", err.message);
+            });
+        },
+        (error) => {
+            console.error("Upload failed:", error);
+            toast({
+                variant: "destructive",
+                title: "Upload Failed",
+                description: `An error occurred while uploading the file: ${error.message}`,
+            });
+            const failedDocRef = doc(firestore, "translationTasks", taskId);
+            updateDoc(failedDocRef, { status: 'failed', errors: ['Upload failed: ' + error.code] }).catch(err => {
+              console.warn("Could not update task to failed status", err.message);
+            });
+            setIsUploading(false);
+        },
+        () => {
+            // 3. On successful upload
+            toast({
+                title: "Upload Complete",
+                description: `${file.name} is now queued for processing.`,
+            });
+            const successDocRef = doc(firestore, "translationTasks", taskId);
+            updateDoc(successDocRef, { status: 'pending', progress: 50 });
+            setIsUploading(false);
+            setFiles([]);
+            setUploadTask(null);
+        }
+    );
   };
 
   const removeFile = () => {
