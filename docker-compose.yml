@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "9002:3000"
+    environment:
+      # This ensures the frontend can talk to the backend service inside Docker
+      - NEXT_PUBLIC_BACKEND_URL=http://backend:8000
+      # Pass through other necessary env vars from your .env file
+      - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY}
+    networks:
+      - linguaflow-net
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount service account key if you are using one for local dev
+      # - ./path/to/your/serviceAccountKey.json:/app/serviceAccountKey.json
+      # Mount a volume for the model cache to persist downloads
+      - huggingface_cache:/root/.cache/huggingface
+      # Mount the glossary DB to persist it
+      - glossary_db:/app
+    environment:
+      # GOOGLE_APPLICATION_CREDENTIALS: /app/serviceAccountKey.json
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - GCS_BUCKET=${GCS_BUCKET}
+    networks:
+      - linguaflow-net
+
+networks:
+  linguaflow-net:
+    driver: bridge
+
+volumes:
+  huggingface_cache:
+  glossary_db:
+
+    

@@ -1,109 +1,124 @@
-# LinguaFlow - Document Translation Framework
+# LinguaFlow - Production-Grade Document Translation Framework
 
-Welcome to LinguaFlow, a modern, AI-powered document translation framework built with Next.js and Firebase Genkit. This application provides a seamless interface for translating text segments, leveraging powerful language models for accuracy and offering tools for post-editing and review.
+LinguaFlow is a comprehensive, AI-powered document translation framework designed for professional use cases. It provides a robust pipeline for ingesting documents (PDF, DOCX, TXT), translating them with high fidelity, and enabling post-translation review and editing. This version has been refactored for scalability and robustness, incorporating a Python FastAPI backend and a sophisticated document processing engine.
 
 ## Architecture
 
-LinguaFlow is a full-stack Next.js application that uses server components and server actions to interact with Google's generative AI models via Firebase Genkit.
+LinguaFlow is a decoupled, full-stack application. The frontend is a Next.js application, while the backend is a Python-based FastAPI service, designed to be containerized and deployed independently.
 
-- **Frontend**: Built with Next.js App Router, React, TypeScript, and styled with Tailwind CSS and [shadcn/ui](https://ui.shadcn.com/).
-- **AI Backend**: Powered by [Firebase Genkit](https://firebase.google.com/docs/genkit), which orchestrates calls to Google's AI models (e.g., Gemini) for translation and content suggestions.
-- **Styling**: A clean, modern UI with a professional color palette and typography, designed for a great user experience.
-- **State Management**: Primarily uses React's built-in hooks (`useState`, `useEffect`, `useTransition`) for managing component state and server action pending states.
+- **Frontend**: Built with Next.js App Router, React, TypeScript, and styled with Tailwind CSS and [shadcn/ui](https://ui.shadcn.com/). It handles user authentication, file uploads, and the post-edition user interface.
+- **Backend**: A powerful FastAPI application that exposes endpoints for document processing. It includes modules for:
+    - **Orchestration**: Manages the end-to-end translation workflow.
+    - **Preprocessing**: Uses `PyMuPDF` for robust text and layout extraction from PDFs and DOCX files.
+    - **OCR**: `pytesseract` is used as a fallback to extract text from image-based documents.
+    - **Glossary Management**: A SQLite-based termbase ensures terminology consistency, manageable via a CLI.
+    - **Translation**: A hybrid approach using local Hugging Face Marian models for speed and cost-effectiveness, with a Genkit-powered LLM fallback for quality.
+    - **Document Reassembly**: Creates translated DOCX and PDF files while preserving the original layout.
+- **Database**: Firestore is used to manage translation task state, progress, and metadata.
+- **Storage**: Firebase Cloud Storage is used for securely storing original and translated documents.
+- **Deployment**: The frontend is optimized for Vercel, and the backend is containerized with Docker for easy deployment on services like Google Cloud Run.
 
 ## Core Features
 
-- **Segment-based Translation**: The document is split into manageable segments, which can be translated individually.
-- **AI-Powered Translation**: Utilizes a Genkit flow that calls a powerful Large Language Model for high-quality translations.
-- **AI-Powered Editing Suggestions**: Get suggestions from an AI to improve and refine translations.
-- **Document Context Summary**: Generate a summary of the entire document to provide context for translators.
-- **Glossary Highlighting**: Automatically highlights predefined glossary terms in the source text.
-- **Interactive Post-Edit UI**: A user-friendly interface to view source text and edit the machine-generated translations.
-- **HTML Export**: Export the final translation to a simple HTML file.
-- **Responsive Design**: The application is fully responsive and works on desktop and mobile devices.
+- **End-to-End Document Workflow**: Upload a document, track its progress through a multi-stage pipeline, and download the translated version.
+- **Hybrid Translation Engine**: Combines the speed of local NMT models (Helsinki-NLP) with the power of large language models.
+- **Format Preservation**: Advanced document parsing and reassembly for DOCX and PDF files to maintain layout and styling.
+- **OCR Fallback**: Automatically extracts text from scanned documents or PDFs without a text layer.
+- **Glossary Enforcement**: Ensures that technical or brand-specific terms are translated correctly every time.
+- **Interactive Post-Edit UI**: A segment-by-segment review interface to compare source and target text, make edits, and get AI-powered suggestions.
+- **Secure and Scalable**: Decoupled architecture, secure Firebase rules, and containerized backend ready for cloud deployment.
+- **Automated Evaluation**: Includes scripts to evaluate translation quality using sacreBLEU and terminology consistency metrics.
 
 ## Getting Started
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/en) (v18 or later)
-- [Firebase Account](https://firebase.google.com/) and a Firebase project.
-- A Google AI API key.
+- **Node.js** (v18 or later)
+- **Python** (v3.9 or later)
+- **Docker** and **Docker Compose**
+- **Firebase Account** and a Firebase project with Firestore and Storage enabled.
+- **Google AI API Key** (for Genkit LLM fallback).
+- **Tesseract OCR Engine**: Install on your local machine (`brew install tesseract` on macOS, `sudo apt-get install tesseract-ocr` on Debian/Ubuntu).
 
 ### Local Development Setup
 
 1.  **Clone the repository:**
     ```bash
-    git clone <repository-url>
-    cd <repository-name>
+    git clone https://github.com/james-hoang-88/Document-Translation.git
+    cd Document-Translation
     ```
 
-2.  **Install dependencies:**
+2.  **Set up environment variables:**
+
+    Copy the example environment files for both the frontend and backend.
+    ```bash
+    cp .env.example .env
+    cp backend/.env.example backend/.env
+    ```
+    Open `.env` and `backend/.env` to add your Firebase project configuration and Google AI API key.
+
+3.  **Install Frontend Dependencies:**
     ```bash
     npm install
     ```
 
-3.  **Set up environment variables:**
-
-    Create a `.env.local` file in the root of the project by copying the example file:
+4.  **Set up Backend Environment:**
     ```bash
-    cp .env.example .env.local
+    python3 -m venv backend/venv
+    source backend/venv/bin/activate
+    pip install -r backend/requirements.txt
     ```
 
-    Open `.env.local` and add your Google AI API key:
-    ```
-    GOOGLE_GENAI_API_KEY=your_google_api_key_here
-    ```
+5.  **Run the Complete System with Docker Compose:**
 
-4.  **Run the Genkit developer UI (optional):**
-
-    In a separate terminal, run the following command to start the Genkit developer UI, which allows you to inspect and test your AI flows.
+    This is the recommended way to run the entire stack, including the FastAPI backend and any other services.
     ```bash
-    npm run genkit:watch
+    docker-compose up --build
     ```
-    Navigate to `http://localhost:4000` in your browser.
+    - The Next.js frontend will be available at `http://localhost:9002`.
+    - The FastAPI backend will be available at `http://localhost:8000`.
 
-5.  **Run the Next.js development server:**
-    ```bash
-    npm run dev
-    ```
+6.  **Run Frontend and Backend Separately (Alternative):**
 
-    The application will be available at `http://localhost:9002`.
+    *   **Terminal 1: Run the Backend**
+        ```bash
+        source backend/venv/bin/activate
+        uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+        ```
+    *   **Terminal 2: Run the Frontend**
+        ```bash
+        npm run dev
+        ```
 
 ### Building for Production
 
-To create a production-ready build of the application, run:
-```bash
-npm run build
-```
-
-To start the production server, run:
-```bash
-npm start
-```
+-   **Frontend (Next.js):**
+    ```bash
+    npm run build
+    ```
+-   **Backend (Docker):**
+    The backend is designed to be deployed as a Docker container. Refer to `deploy_cloud_run.md` for instructions.
 
 ## Project Structure
 
 ```
 LinguaFlow/
-├── src/
-│   ├── ai/             # Genkit AI flows
-│   ├── app/            # Next.js App Router (pages and layouts)
-│   ├── components/     # Reusable React components
-│   ├── hooks/          # Custom React hooks
-│   └── lib/            # Utility functions, types, actions, and data
-├── .env.local          # Local environment variables (gitignored)
-├── next.config.ts      # Next.js configuration
-├── package.json        # Project dependencies and scripts
-└── tailwind.config.ts  # Tailwind CSS configuration
+├── backend/            # FastAPI backend application
+│   ├── src/            # Python source code for the backend
+│   ├── tests/          # Pytest tests for the backend
+│   ├── Dockerfile
+│   └── requirements.txt
+├── src/                # Next.js frontend application
+│   ├── app/            # App Router pages and layouts
+│   ├── components/     # React components
+│   └── lib/            # Actions, types, and constants
+├── public/
+├── .env.example        # Frontend environment variables
+├── docker-compose.yml  # Docker Compose for local development
+├── firebase.json       # Firebase configuration
+├── firestore.rules     # Firestore security rules
+├── storage.rules       # Cloud Storage security rules
+└── package.json
 ```
 
-## How It Works
-
-The application loads a sample document from `src/lib/data.ts`. The main view (`TranslationView`) splits the document into segments. Each segment is managed by a `SegmentEditor` component, which allows the user to:
-
-1.  Click **"Translate"** to trigger a server action that calls the `translateWithLLMFallback` Genkit flow.
-2.  Edit the returned translation in a textarea.
-3.  Click **"Suggest Edits"** to get AI-powered improvements on the current translation.
-
-The sidebar provides document-level actions like language selection, context summarization, and exporting the final work.
+    

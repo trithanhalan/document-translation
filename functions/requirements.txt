@@ -1,6 +1,4 @@
+# This file is deprecated. See backend/requirements.txt for new dependencies.
 functions-framework==3.*
-google-cloud-firestore==2.*
-google-cloud-storage==2.*
-python-docx==1.1.2
-PyPDF2==3.0.1
-requests==2.32.3
+
+    

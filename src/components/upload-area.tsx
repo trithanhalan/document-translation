@@ -15,7 +15,7 @@ import { FileUp, File, X, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { useFirebase, initiateAnonymousSignIn, addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase";
-import { getStorage, ref, uploadBytesResumable, UploadTask } from "firebase/storage";
+import { getStorage, ref, uploadBytesResumable, UploadTask, UploadTaskSnapshot } from "firebase/storage";
 import { collection, serverTimestamp, doc, DocumentReference } from "firebase/firestore";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { LANGUAGES } from "@/lib/constants";
@@ -31,7 +31,6 @@ export function UploadArea() {
   const [targetLang, setTargetLang] = useState("de");
 
   useEffect(() => {
-    // Sign in anonymously if no user is present after initial auth check
     if (!isUserLoading && !user && auth) {
       initiateAnonymousSignIn(auth);
     }
@@ -61,17 +60,17 @@ export function UploadArea() {
       ],
       "text/plain": [".txt"],
     },
-    maxSize: 50 * 1024 * 1024, // 50 MB
+    maxSize: 50 * 1024 * 1024,
     multiple: false,
   });
 
   const handleUpload = async () => {
     if (files.length === 0) {
-      toast({ variant: "destructive", title: "No file selected", description: "Please select a file to upload." });
+      toast({ variant: "destructive", title: "No file selected" });
       return;
     }
     if (!user || !firestore) {
-      toast({ variant: "destructive", title: "Authentication Error", description: "You must be signed in to upload files." });
+      toast({ variant: "destructive", title: "Authentication Error" });
       return;
     }
 
@@ -82,7 +81,6 @@ export function UploadArea() {
     let taskDocRef: DocumentReference;
 
     try {
-        // 1. Create a task document in Firestore to get an ID
         taskDocRef = await addDocumentNonBlocking(collection(firestore, "translationTasks"), {
             fileName: file.name,
             status: 'uploading',
@@ -90,8 +88,8 @@ export function UploadArea() {
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             ownerUid: user.uid,
-            sourceLang: sourceLang, 
-            targetLang: targetLang,
+            srcLang: sourceLang, 
+            tgtLang: targetLang,
         });
     } catch (error: any) {
         console.error("Error creating translation task:", error);
@@ -105,46 +103,79 @@ export function UploadArea() {
     }
     
     const taskId = taskDocRef.id;
-
-    // 2. Upload the file to Firebase Storage
     const storage = getStorage();
     const storageRef = ref(storage, `uploads/${taskId}/${file.name}`);
     const task = uploadBytesResumable(storageRef, file);
     setUploadTask(task);
 
     task.on(
-        "state_changed",
-        (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            setUploadProgress(progress);
-            // This doc() call might fail if rules aren't set up for update, but it's just for progress.
-            const progressDocRef = doc(firestore, "translationTasks", taskId);
-            updateDocumentNonBlocking(progressDocRef, { progress: Math.round(progress * 0.5) });
-        },
-        (error) => {
-            console.error("Upload failed:", error);
-            toast({
-                variant: "destructive",
-                title: "Upload Failed",
-                description: `An error occurred while uploading the file: ${error.message}`,
-            });
-            const failedDocRef = doc(firestore, "translationTasks", taskId);
-            updateDocumentNonBlocking(failedDocRef, { status: 'failed', errors: ['Upload failed: ' + error.code] });
-            setIsUploading(false);
-        },
-        () => {
-            // 3. On successful upload, update status to 'pending' for the worker to pick up
-            toast({
-                title: "Upload Complete",
-                description: `${file.name} is now queued for processing.`,
-            });
-            const successDocRef = doc(firestore, "translationTasks", taskId);
-            // This is the trigger for the cloud function
-            updateDocumentNonBlocking(successDocRef, { status: 'pending', progress: 50 });
-            setIsUploading(false);
-            setFiles([]);
-            setUploadTask(null);
+      "state_changed",
+      (snapshot: UploadTaskSnapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setUploadProgress(progress);
+        const progressDocRef = doc(firestore, "translationTasks", taskId);
+        updateDocumentNonBlocking(progressDocRef, { progress: Math.round(progress * 0.2) }); // Upload is 20% of the work
+      },
+      (error: any) => {
+        console.error("Upload failed:", error);
+        if (error.code !== 'storage/canceled') {
+          toast({
+            variant: "destructive",
+            title: "Upload Failed",
+            description: `An error occurred: ${error.message}`,
+          });
+          const failedDocRef = doc(firestore, "translationTasks", taskId);
+          updateDocumentNonBlocking(failedDocRef, { status: 'failed', errors: ['Upload failed: ' + error.code] });
         }
+        setIsUploading(false);
+      },
+      async () => {
+        toast({
+          title: "Upload Complete",
+          description: "File is now queued for translation.",
+        });
+        const successDocRef = doc(firestore, "translationTasks", taskId);
+        // Set status to pending to trigger backend processing
+        updateDocumentNonBlocking(successDocRef, { status: 'pending', progress: 20 });
+        
+        // **NEW**: Trigger the FastAPI backend
+        try {
+          // This assumes the backend is running on port 8000.
+          // In a real app, this URL would come from an environment variable.
+          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+          const response = await fetch(`${backendUrl}/process`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ taskId: taskId }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Backend processing failed to start.');
+          }
+          
+          toast({
+            title: "Processing Started",
+            description: "The translation process has been initiated.",
+          });
+
+        } catch (error: any) {
+           console.error("Backend trigger failed:", error);
+           toast({
+             variant: "destructive",
+             title: "Backend Error",
+             description: `Could not start the translation process: ${error.message}`,
+           });
+           const failedDocRef = doc(firestore, "translationTasks", taskId);
+           updateDocumentNonBlocking(failedDocRef, { status: 'failed', errors: ['Backend trigger failed: ' + error.message] });
+        }
+
+        setIsUploading(false);
+        setFiles([]);
+        setUploadTask(null);
+      }
     );
   };
 
@@ -155,40 +186,49 @@ export function UploadArea() {
   const cancelUpload = () => {
     if (uploadTask) {
         uploadTask.cancel();
-        setIsUploading(false);
-        setUploadProgress(0);
-        setFiles([]);
         toast({ title: "Upload Canceled" });
     }
   }
 
   return (
-    <Card className="shadow-lg border-0">
+    <Card className="shadow-lg border-0 bg-card/50">
       <CardHeader>
         <CardTitle className="font-headline text-3xl tracking-tight text-foreground">
-          Upload Document
+          New Translation
         </CardTitle>
         <CardDescription className="text-base text-muted-foreground">
-          Drag and drop your document here or click to browse. Supported
-          formats: PDF, DOCX, TXT. Max file size: 50MB.
+          Upload a document to begin the translation process.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {files.length === 0 && !isUploading ? (
-          <div
-            {...getRootProps()}
-            className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
-              isDragActive
-                ? "border-primary bg-primary/10"
-                : "border-border hover:border-primary/50"
-            }`}
-          >
-            <input {...getInputProps()} />
-            <div className="flex flex-col items-center gap-2 text-muted-foreground">
-              <FileUp className="h-8 w-8" />
-              <p>Drag 'n' drop a file here, or click to select a file</p>
+           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+            <div
+                {...getRootProps()}
+                className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
+                isDragActive
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:border-primary/50"
+                }`}
+            >
+                <input {...getInputProps()} />
+                <div className="flex flex-col items-center gap-4 text-muted-foreground">
+                <FileUp className="h-12 w-12 text-primary" />
+                <p className="font-semibold text-lg">Drop your document here</p>
+                <p className="text-sm">or click to browse</p>
+                <p className="text-xs mt-4">Supports: PDF, DOCX, TXT (Max 50MB)</p>
+                </div>
             </div>
-          </div>
+            <div className="prose prose-invert max-w-none text-muted-foreground">
+                <h4 className="text-foreground font-semibold">Getting Started</h4>
+                <ol>
+                    <li>Select the source and target languages for your translation.</li>
+                    <li>Drag and drop your document into the upload area, or click to select a file from your computer.</li>
+                    <li>Once uploaded, the translation process will begin automatically.</li>
+                    <li>You can monitor the progress of your translation on the main dashboard.</li>
+                </ol>
+            </div>
+           </div>
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -276,3 +316,5 @@ export function UploadArea() {
     </Card>
   );
 }
+
+    
