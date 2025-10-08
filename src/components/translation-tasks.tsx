@@ -1,9 +1,10 @@
+
 'use client';
 
 import React from 'react';
 import type { TranslationTask } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
-import { collection, query, where, Timestamp } from 'firebase/firestore';
+import { collection, query, where, Timestamp, orderBy } from 'firebase/firestore';
 import {
   Card,
   CardContent,
@@ -37,7 +38,9 @@ import { Skeleton } from './ui/skeleton';
 const statusIcons: { [key in TranslationTask['status']]: React.ReactNode } = {
   pending: <Hourglass className="text-yellow-500" />,
   uploading: <Loader className="animate-spin text-blue-500" />,
-  processing: <RefreshCw className="animate-spin text-blue-500" />,
+  preprocessing: <RefreshCw className="animate-spin text-indigo-500" />,
+  translating: <RefreshCw className="animate-spin text-blue-500" />,
+  reassembling: <RefreshCw className="animate-spin text-purple-500" />,
   review: <File className="text-purple-500" />,
   completed: <CheckCircle2 className="text-green-500" />,
   failed: <AlertTriangle className="text-red-500" />,
@@ -46,7 +49,9 @@ const statusIcons: { [key in TranslationTask['status']]: React.ReactNode } = {
 const statusColors: { [key in TranslationTask['status']]: string } = {
   pending: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20',
   uploading: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-  processing: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+  preprocessing: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20',
+  translating: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+  reassembling: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
   review: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
   completed: 'bg-green-500/10 text-green-600 border-green-500/20',
   failed: 'bg-red-500/10 text-red-600 border-red-500/20',
@@ -58,9 +63,13 @@ const toDate = (timestamp: Timestamp | string | Date): Date | null => {
     return timestamp.toDate();
   }
   if (typeof timestamp === 'string' || timestamp instanceof Date) {
-    const d = new Date(timestamp);
-    if (!isNaN(d.getTime())) {
-      return d;
+    try {
+        const d = new Date(timestamp);
+        if (!isNaN(d.getTime())) {
+            return d;
+        }
+    } catch(e) {
+        return null;
     }
   }
   return null;
@@ -73,7 +82,8 @@ export function TranslationTasks() {
     if (!firestore || !user) return null;
     return query(
       collection(firestore, 'translationTasks'),
-      where('ownerUid', '==', user.uid)
+      where('ownerUid', '==', user.uid),
+      orderBy('createdAt', 'desc')
     );
   }, [firestore, user]);
 
@@ -114,6 +124,7 @@ export function TranslationTasks() {
             )}
             {!isLoading && tasks && tasks.map((task) => {
               const createdAtDate = toDate(task.createdAt as any);
+              const status = task.status || 'pending';
               return (
               <TableRow key={task.id}>
                 <TableCell className="font-medium">{task.fileName}</TableCell>
@@ -125,9 +136,9 @@ export function TranslationTasks() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge className={`capitalize ${statusColors[task.status]}`}>
-                    {statusIcons[task.status]}
-                    <span className="ml-2">{task.status}</span>
+                  <Badge className={`capitalize ${statusColors[status]}`}>
+                    {statusIcons[status]}
+                    <span className="ml-2">{status}</span>
                   </Badge>
                 </TableCell>
                 <TableCell>
@@ -144,13 +155,13 @@ export function TranslationTasks() {
                   }) : 'Just now'}
                 </TableCell>
                 <TableCell className="text-right">
-                  {task.status === 'completed' && (
+                  {status === 'completed' && (
                     <Button variant="outline" size="sm">
                       <Download className="mr-2 h-4 w-4" />
                       Download
                     </Button>
                   )}
-                   {task.status === 'review' && (
+                   {status === 'review' && (
                     <Button variant="default" size="sm">
                       <File className="mr-2 h-4 w-4" />
                       Review
@@ -179,3 +190,5 @@ export function TranslationTasks() {
     </Card>
   );
 }
+
+    

@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 export type Segment = {
@@ -27,11 +28,12 @@ export type TranslationTask = {
   fileName: string;
   status: TranslationTaskStatus;
   progress: number;
-  createdAt: Timestamp | string; // serverTimestamp can result in Timestamp
-  updatedAt: Timestamp | string;
+  createdAt: Timestamp | string | Date; // serverTimestamp can result in Timestamp, JS Date for local
+  updatedAt: Timestamp | string | Date;
   srcLang: string;
   tgtLang: string;
   ownerUid: string;
+  downloadURL?: string; // URL of the original uploaded file
   errors?: string[];
   outputs?: Record<string, string>; // e.g., { "docx": "path/to/file.docx" }
 };

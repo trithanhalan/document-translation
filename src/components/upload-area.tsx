@@ -15,8 +15,8 @@ import { FileUp, File, X, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { useFirebase, initiateAnonymousSignIn } from "@/firebase";
-import { getStorage, ref, uploadBytesResumable, UploadTask, UploadTaskSnapshot } from "firebase/storage";
-import { collection, serverTimestamp, doc, DocumentReference, updateDoc, addDoc } from "firebase/firestore";
+import { getStorage, ref, uploadBytesResumable, UploadTask, UploadTaskSnapshot, getDownloadURL } from "firebase/storage";
+import { collection, serverTimestamp, doc, DocumentReference, updateDoc, setDoc, deleteDoc } from "firebase/firestore";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { LANGUAGES } from "@/lib/constants";
 
@@ -29,6 +29,9 @@ export function UploadArea() {
   const [uploadTask, setUploadTask] = useState<UploadTask | null>(null);
   const [sourceLang, setSourceLang] = useState("en");
   const [targetLang, setTargetLang] = useState("de");
+  
+  // Hold a reference to the task doc so we can cancel it
+  const [taskDocRef, setTaskDocRef] = useState<DocumentReference | null>(null);
 
   useEffect(() => {
     if (!isUserLoading && !user && auth) {
@@ -78,11 +81,19 @@ export function UploadArea() {
     setUploadProgress(0);
     const file = files[0];
     
-    let taskDocRef: DocumentReference;
+    // 1. Generate a client-side ID for the task *before* doing anything else.
+    const newTaskRef = doc(collection(firestore, "translationTasks"));
+    const taskId = newTaskRef.id;
+    setTaskDocRef(newTaskRef); // Store ref for cancellation
 
+    const storage = getStorage();
+    const storageRef = ref(storage, `uploads/${taskId}/${file.name}`);
+    const task = uploadBytesResumable(storageRef, file);
+    setUploadTask(task);
+
+    // Create the document immediately so the UI can reflect the "uploading" state
     try {
-        // Use awaited addDoc to ensure we get the document reference before proceeding
-        taskDocRef = await addDoc(collection(firestore, "translationTasks"), {
+        await setDoc(newTaskRef, {
             fileName: file.name,
             status: 'uploading',
             progress: 0,
@@ -92,63 +103,58 @@ export function UploadArea() {
             srcLang: sourceLang, 
             tgtLang: targetLang,
         });
-    } catch (error: any) {
-        console.error("Error creating translation task:", error);
+    } catch(error: any) {
+        console.error("Error creating initial task document:", error);
         toast({
           variant: "destructive",
           title: "Task Creation Failed",
-          description: `Could not create the translation task in the database. ${error.message}`,
+          description: `Could not create the translation task. ${error.message}`,
         });
         setIsUploading(false);
         return;
     }
-    
-    const taskId = taskDocRef.id;
-    const storage = getStorage();
-    const storageRef = ref(storage, `uploads/${taskId}/${file.name}`);
-    const task = uploadBytesResumable(storageRef, file);
-    setUploadTask(task);
+
 
     task.on(
       "state_changed",
       (snapshot: UploadTaskSnapshot) => {
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
         setUploadProgress(progress);
-        const progressDocRef = doc(firestore, "translationTasks", taskId);
-        
-        try {
-            // Awaited updateDoc for better reliability
-            updateDoc(progressDocRef, { progress: Math.round(progress * 0.2) }); // Upload is 20% of the work
-        } catch (e) {
+
+        // Update progress (upload is first 20% of the total job)
+        updateDoc(newTaskRef, { progress: Math.round(progress * 0.2) }).catch(e => {
             console.warn("Could not update progress", e);
-        }
+        });
       },
       (error: any) => {
         console.error("Upload failed:", error);
-        const failedDocRef = doc(firestore, "translationTasks", taskId);
+        
+        // Use the stored task reference for updates
         if (error.code !== 'storage/canceled') {
           toast({
             variant: "destructive",
             title: "Upload Failed",
             description: `An error occurred: ${error.message}`,
           });
-          updateDoc(failedDocRef, { status: 'failed', errors: ['Upload failed: ' + error.code], progress: 0 });
+          updateDoc(newTaskRef, { status: 'failed', errors: ['Upload failed: ' + error.code], progress: 0 });
         } else {
-            // If canceled, we can just delete the task doc
-            // deleteDoc(failedDocRef);
-            updateDoc(failedDocRef, { status: 'failed', errors: ['Upload canceled by user.'], progress: 0 });
+            // If canceled by user, just delete the task document
+            deleteDoc(newTaskRef);
         }
         setIsUploading(false);
         setFiles([]);
         setUploadTask(null);
+        setTaskDocRef(null);
       },
       async () => {
+        const downloadURL = await getDownloadURL(task.snapshot.ref);
         toast({
           title: "Upload Complete",
           description: "File is now queued for translation.",
         });
-        const successDocRef = doc(firestore, "translationTasks", taskId);
-        await updateDoc(successDocRef, { status: 'pending', progress: 20 });
+        
+        // Update status to 'pending' now that upload is finished.
+        await updateDoc(newTaskRef, { status: 'pending', progress: 20, downloadURL });
         
         try {
           const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
@@ -177,13 +183,13 @@ export function UploadArea() {
              title: "Backend Error",
              description: `Could not start the translation process: ${error.message}`,
            });
-           const failedDocRef = doc(firestore, "translationTasks", taskId);
-           await updateDoc(failedDocRef, { status: 'failed', errors: ['Backend trigger failed: ' + error.message] });
+           await updateDoc(newTaskRef, { status: 'failed', errors: ['Backend trigger failed: ' + error.message] });
         }
 
         setIsUploading(false);
         setFiles([]);
         setUploadTask(null);
+        setTaskDocRef(null);
       }
     );
   };
