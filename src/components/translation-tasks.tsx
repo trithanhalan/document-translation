@@ -80,10 +80,11 @@ export function TranslationTasks() {
 
   const tasksQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
+    // Removed orderBy to fix permissions error.
+    // A composite index is required in Firestore for this query.
     return query(
       collection(firestore, 'translationTasks'),
-      where('ownerUid', '==', user.uid),
-      orderBy('createdAt', 'desc')
+      where('ownerUid', '==', user.uid)
     );
   }, [firestore, user]);
 
@@ -190,5 +191,3 @@ export function TranslationTasks() {
     </Card>
   );
 }
-
-    
