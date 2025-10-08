@@ -21,16 +21,16 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from './ui/select';
+} from '../ui/select';
 import { LANGUAGES } from '@/lib/constants';
-import { Button } from './ui/button';
+import { Button } from '../ui/button';
 import { summarizeContext } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
 import { sampleDocument, sampleGlossary } from '@/lib/data';
 import { Loader2, FileText, Download, BookMarked, MessageSquareQuote, FileUp } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { ScrollArea } from './ui/scroll-area';
-import { Separator } from './ui/separator';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { ScrollArea } from '../ui/scroll-area';
+import { Separator } from '../ui/separator';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 

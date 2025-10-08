@@ -14,11 +14,15 @@ import { Button } from "@/components/ui/button";
 import { FileUp, File, X, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
-import { useFirebase, initiateAnonymousSignIn, addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase";
+import { useFirebase } from "@/firebase/provider";
 import { getStorage, ref, uploadBytesResumable, UploadTask, UploadTaskSnapshot } from "firebase/storage";
-import { collection, serverTimestamp, doc, DocumentReference } from "firebase/firestore";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { collection, serverTimestamp, doc, DocumentReference, addDoc, updateDoc } from "firebase/firestore";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { LANGUAGES } from "@/lib/constants";
+import { initiateAnonymousSignIn } from "@/firebase/auth/anonymous-auth";
+import { updateDocumentNonBlocking } from "@/firebase/firestore/non-blocking-writes";
+import { useRouter } from "next/navigation";
+
 
 export function UploadArea() {
   const { toast } = useToast();
@@ -29,6 +33,8 @@ export function UploadArea() {
   const [uploadTask, setUploadTask] = useState<UploadTask | null>(null);
   const [sourceLang, setSourceLang] = useState("en");
   const [targetLang, setTargetLang] = useState("de");
+  const router = useRouter();
+
 
   useEffect(() => {
     if (!isUserLoading && !user && auth) {
@@ -60,7 +66,7 @@ export function UploadArea() {
       ],
       "text/plain": [".txt"],
     },
-    maxSize: 50 * 1024 * 1024,
+    maxSize: 50 * 1024 * 1024, // 50MB
     multiple: false,
   });
 
@@ -70,7 +76,7 @@ export function UploadArea() {
       return;
     }
     if (!user || !firestore) {
-      toast({ variant: "destructive", title: "Authentication Error" });
+      toast({ variant: "destructive", title: "Authentication Error", description: "Please wait a moment and try again." });
       return;
     }
 
@@ -81,7 +87,8 @@ export function UploadArea() {
     let taskDocRef: DocumentReference;
 
     try {
-        taskDocRef = await addDocumentNonBlocking(collection(firestore, "translationTasks"), {
+        // Use the standard `addDoc` as it's a critical first step.
+        taskDocRef = await addDoc(collection(firestore, "translationTasks"), {
             fileName: file.name,
             status: 'uploading',
             progress: 0,
@@ -113,20 +120,20 @@ export function UploadArea() {
       (snapshot: UploadTaskSnapshot) => {
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
         setUploadProgress(progress);
-        const progressDocRef = doc(firestore, "translationTasks", taskId);
-        updateDocumentNonBlocking(progressDocRef, { progress: Math.round(progress * 0.2) }); // Upload is 20% of the work
+        // Use non-blocking update for progress
+        updateDocumentNonBlocking(taskDocRef, { progress: Math.round(progress * 0.2) }); // Upload is 20% of the work
       },
       (error: any) => {
         console.error("Upload failed:", error);
-        // It's normal for this to be called on cancellation.
         if (error.code !== 'storage/canceled') {
           toast({
             variant: "destructive",
             title: "Upload Failed",
             description: `An error occurred: ${error.message}`,
           });
-          const failedDocRef = doc(firestore, "translationTasks", taskId);
-          updateDocumentNonBlocking(failedDocRef, { status: 'failed', errors: ['Upload failed: ' + error.code] });
+          updateDocumentNonBlocking(taskDocRef, { status: 'failed', errors: ['Upload failed: ' + error.code] });
+        } else {
+            toast({ title: "Upload Canceled" });
         }
         setIsUploading(false);
       },
@@ -135,19 +142,15 @@ export function UploadArea() {
           title: "Upload Complete",
           description: "File is now queued for translation.",
         });
-        const successDocRef = doc(firestore, "translationTasks", taskId);
-        
-        // **NEW**: Set status to 'pending' to trigger backend processing
-        updateDocumentNonBlocking(successDocRef, { status: 'pending', progress: 20 });
         
         try {
-          // This assumes the backend is running.
+          // Set status to 'pending' which the backend will listen for.
+          await updateDoc(taskDocRef, { status: 'pending', progress: 20 });
+          
           const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
           const response = await fetch(`${backendUrl}/process`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ taskId: taskId }),
           });
 
@@ -161,6 +164,9 @@ export function UploadArea() {
             description: "The translation process has been initiated.",
           });
 
+          // Redirect to dashboard after successful start
+          router.push('/');
+
         } catch (error: any) {
            console.error("Backend trigger failed:", error);
            toast({
@@ -168,8 +174,7 @@ export function UploadArea() {
              title: "Backend Error",
              description: `Could not start the translation process: ${error.message}`,
            });
-           const failedDocRef = doc(firestore, "translationTasks", taskId);
-           updateDocumentNonBlocking(failedDocRef, { status: 'failed', errors: ['Backend trigger failed: ' + error.message] });
+           updateDocumentNonBlocking(taskDocRef, { status: 'failed', errors: ['Backend trigger failed: ' + error.message] });
         }
 
         setIsUploading(false);
@@ -186,9 +191,8 @@ export function UploadArea() {
   const cancelUpload = () => {
     if (uploadTask) {
         uploadTask.cancel();
-        toast({ title: "Upload Canceled" });
     }
-  }
+  };
 
   return (
     <Card className="shadow-lg border-0 bg-card/50">
@@ -203,71 +207,72 @@ export function UploadArea() {
       <CardContent>
         {files.length === 0 && !isUploading ? (
            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-            <div
-                {...getRootProps()}
-                className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
-                isDragActive
-                    ? "border-primary bg-primary/10"
-                    : "border-border hover:border-primary/50"
-                }`}
-            >
-                <input {...getInputProps()} />
-                <div className="flex flex-col items-center gap-4 text-muted-foreground">
-                <FileUp className="h-12 w-12 text-primary" />
-                <p className="font-semibold text-lg">Drop your document here</p>
-                <p className="text-sm">or click to browse</p>
-                <p className="text-xs mt-4">Supports: PDF, DOCX, TXT (Max 50MB)</p>
+            <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-muted-foreground">
+                        Source Language
+                        </label>
+                        <Select value={sourceLang} onValueChange={setSourceLang} disabled={isUploading}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select language" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {LANGUAGES.map((lang) => (
+                            <SelectItem key={lang.value} value={lang.value}>
+                                {lang.label}
+                            </SelectItem>
+                            ))}
+                        </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-muted-foreground">
+                        Target Language
+                        </label>
+                        <Select value={targetLang} onValueChange={setTargetLang} disabled={isUploading}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select language" />
+                        </Trigger>
+                        <SelectContent>
+                            {LANGUAGES.map((lang) => (
+                            <SelectItem key={lang.value} value={lang.value}>
+                                {lang.label}
+                            </SelectItem>
+                            ))}
+                        </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                <div
+                    {...getRootProps()}
+                    className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
+                    isDragActive
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-primary/50"
+                    }`}
+                >
+                    <input {...getInputProps()} />
+                    <div className="flex flex-col items-center gap-4 text-muted-foreground">
+                    <FileUp className="h-12 w-12 text-primary" />
+                    <p className="font-semibold text-lg">Drop your document here</p>
+                    <p className="text-sm">or click to browse</p>
+                    <p className="text-xs mt-4">Supports: PDF, DOCX, TXT (Max 50MB)</p>
+                    </div>
                 </div>
             </div>
-            <div className="prose prose-invert max-w-none text-muted-foreground">
+            <div className="prose prose-sm prose-invert max-w-none text-muted-foreground rounded-lg border bg-muted/20 p-6">
                 <h4 className="text-foreground font-semibold">Getting Started</h4>
                 <ol>
                     <li>Select the source and target languages for your translation.</li>
                     <li>Drag and drop your document into the upload area, or click to select a file from your computer.</li>
-                    <li>Once uploaded, the translation process will begin automatically.</li>
-                    <li>You can monitor the progress of your translation on the main dashboard.</li>
+                    <li>Click "Start Translation".</li>
+                    <li>You will be redirected to the dashboard to monitor the progress of your translation.</li>
                 </ol>
             </div>
            </div>
         ) : (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">
-                  Source Language
-                </label>
-                <Select value={sourceLang} onValueChange={setSourceLang} disabled={isUploading}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select language" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LANGUAGES.map((lang) => (
-                      <SelectItem key={lang.value} value={lang.value}>
-                        {lang.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">
-                  Target Language
-                </label>
-                <Select value={targetLang} onValueChange={setTargetLang} disabled={isUploading}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select language" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LANGUAGES.map((lang) => (
-                      <SelectItem key={lang.value} value={lang.value}>
-                        {lang.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
             {files.map((file) => (
               <div
                 key={file.name}
@@ -295,9 +300,7 @@ export function UploadArea() {
             )}
             {!isUploading && files.length > 0 && (
               <Button onClick={handleUpload} className="w-full sm:w-auto" disabled={!user || isUserLoading}>
-                 {isUserLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                 ) : null}
+                 {isUserLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Start Translation
               </Button>
             )}

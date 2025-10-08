@@ -7,9 +7,15 @@ export type Segment = {
   isGlossary?: boolean; // Optional flag for glossary terms
 };
 
+export type Document = {
+    title: string;
+    segments: Segment[];
+};
+
 export type GlossaryTerm = {
   term: string;
   translation: string;
+  source_term: string;
 };
 
 export type TranslationTaskStatus =
@@ -35,5 +41,3 @@ export type TranslationTask = {
   errors?: string[];
   outputs?: Record<string, string>; // e.g., { "docx": "path/to/file.docx" }
 };
-
-    

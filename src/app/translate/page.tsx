@@ -1,11 +1,9 @@
-import { UploadArea } from "@/components/upload-area";
-import { TranslationTasks } from "@/components/translation-tasks";
+import { UploadArea } from "@/components/app/upload-area";
 
 export default function TranslatePage() {
   return (
     <div className="space-y-8">
       <UploadArea />
-      <TranslationTasks />
     </div>
   );
 }

@@ -23,54 +23,61 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   File,
-  RefreshCw,
   CheckCircle2,
   AlertTriangle,
   Loader,
   Hourglass,
   Download,
+  Upload,
 } from 'lucide-react';
-import { Progress } from './ui/progress';
+import { Progress } from '../ui/progress';
 import { formatDistanceToNow } from 'date-fns';
-import { Skeleton } from './ui/skeleton';
+import { Skeleton } from '../ui/skeleton';
+import Link from 'next/link';
 
 const statusIcons: { [key in TranslationTask['status']]: React.ReactNode } = {
   pending: <Hourglass className="text-yellow-500" />,
   uploading: <Loader className="animate-spin text-blue-500" />,
-  processing: <RefreshCw className="animate-spin text-blue-500" />,
+  preprocessing: <Loader className="animate-spin text-blue-500" />,
+  translating: <Loader className="animate-spin text-blue-500" />,
+  reassembling: <Loader className="animate-spin text-blue-500" />,
   review: <File className="text-purple-500" />,
   completed: <CheckCircle2 className="text-green-500" />,
   failed: <AlertTriangle className="text-red-500" />,
 };
 
 const statusColors: { [key in TranslationTask['status']]: string } = {
-  pending: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20',
-  uploading: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-  processing: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-  review: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
-  completed: 'bg-green-500/10 text-green-600 border-green-500/20',
-  failed: 'bg-red-500/10 text-red-600 border-red-500/20',
-};
+    pending: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20',
+    uploading: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+    preprocessing: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+    translating: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+    reassembling: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+    review: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
+    completed: 'bg-green-500/10 text-green-600 border-green-500/20',
+    failed: 'bg-red-500/10 text-red-600 border-red-500/20',
+  };
 
 // Helper to convert Firestore Timestamp to JS Date
 const toDate = (timestamp: Timestamp | string | Date): Date | null => {
-  if (timestamp instanceof Timestamp) {
-    return timestamp.toDate();
-  }
-  if (typeof timestamp === 'string' || timestamp instanceof Date) {
-    const d = new Date(timestamp);
-    if (!isNaN(d.getTime())) {
-      return d;
+    if (timestamp instanceof Timestamp) {
+      return timestamp.toDate();
     }
-  }
-  return null;
-};
+    if (typeof timestamp === 'string' || timestamp instanceof Date) {
+      // Handle ISO string or existing Date object
+      const d = new Date(timestamp);
+      if (!isNaN(d.getTime())) {
+        return d;
+      }
+    }
+    return null;
+  };
 
 export function TranslationTasks() {
   const { firestore, user } = useFirebase();
 
   const tasksQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
+    // Only fetch tasks for the currently logged-in user
     return query(
       collection(firestore, 'translationTasks'),
       where('ownerUid', '==', user.uid)
@@ -144,17 +151,21 @@ export function TranslationTasks() {
                   }) : 'Just now'}
                 </TableCell>
                 <TableCell className="text-right">
-                  {task.status === 'completed' && (
-                    <Button variant="outline" size="sm">
-                      <Download className="mr-2 h-4 w-4" />
-                      Download
-                    </Button>
+                  {(task.status === 'review' || task.status === 'completed') && task.outputs?.docx && (
+                     <a href={task.outputs.docx} target="_blank" rel="noopener noreferrer">
+                        <Button variant="outline" size="sm">
+                            <Download className="mr-2 h-4 w-4" />
+                            Download
+                        </Button>
+                     </a>
                   )}
-                   {task.status === 'review' && (
-                    <Button variant="default" size="sm">
-                      <File className="mr-2 h-4 w-4" />
-                      Review
-                    </Button>
+                  {(task.status === 'review' || task.status === 'completed') && (
+                    <Link href={`/translate/review/${task.id}`} passHref>
+                        <Button variant="default" size="sm" className="ml-2">
+                            <File className="mr-2 h-4 w-4" />
+                            Review
+                        </Button>
+                    </Link>
                   )}
                 </TableCell>
               </TableRow>
@@ -162,7 +173,15 @@ export function TranslationTasks() {
             {!isLoading && (!tasks || tasks.length === 0) && (
                 <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground h-24">
-                        No translation jobs found. Upload a document to get started.
+                        <div className="flex flex-col items-center gap-4">
+                            <span>No translation jobs found.</span>
+                            <Link href="/translate" passHref>
+                                <Button>
+                                    <Upload className="mr-2" />
+                                    New Translation
+                                </Button>
+                            </Link>
+                        </div>
                     </TableCell>
                 </TableRow>
             )}

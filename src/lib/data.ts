@@ -1,10 +1,10 @@
-import type { Document, GlossaryTerm } from "./types";
+import type { GlossaryTerm, Document } from "./types";
 
 export const sampleGlossary: GlossaryTerm[] = [
-  { term: "Non-destructive testing", translation: "Zerstörungsfreie Prüfung" },
-  { term: "NDT", translation: "ZfP" },
-  { term: "ultrasonic", translation: "Ultraschall" },
-  { term: "radiographic", translation: "radiographisch" },
+  { term: "Non-destructive testing", translation: "Zerstörungsfreie Prüfung", source_term: "Non-destructive testing" },
+  { term: "NDT", translation: "ZfP", source_term: "NDT" },
+  { term: "ultrasonic", translation: "Ultraschall", source_term: "ultrasonic" },
+  { term: "radiographic", translation: "radiographisch", source_term: "radiographic" },
 ];
 
 export const sampleDocument: Document = {

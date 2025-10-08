@@ -9,11 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles, Wand2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { suggestEdits, translateSegment } from "@/lib/actions";
-import { Badge } from "./ui/badge";
-import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
-import { Skeleton } from "./ui/skeleton";
+import { Badge } from "../ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { Skeleton } from "../ui/skeleton";
 import type { GlossaryTerm } from "@/lib/types";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { LANGUAGES } from "@/lib/constants";
 
 interface TranslationCardProps {
@@ -144,7 +144,7 @@ export function TranslationCard({
                 <Select value={targetLang} onValueChange={setTargetLang}>
                     <SelectTrigger>
                     <SelectValue placeholder="Select language" />
-                    </SelectTrigger>
+                    </Trigger>
                     <SelectContent>
                     {LANGUAGES.map((lang) => (
                         <SelectItem key={lang.value} value={lang.value}>
