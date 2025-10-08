@@ -6,28 +6,36 @@ logger = get_logger(__name__)
 def reassemble_docx(original_doc: docx.Document, translated_segments: list, output_path: str):
     """
     Replaces the text in the original DOCX document with translated segments.
-    This is a simplified implementation that replaces paragraph by paragraph.
-    A more advanced version would map segments back to their exact original run.
+    This version correctly maps translated segments back to their original paragraphs.
     """
     logger.info(f"Reassembling DOCX file. Found {len(translated_segments)} translated segments.")
     
-    translated_para_texts = [seg['translation'] for seg in translated_segments]
+    # Create a dictionary to map paragraph index to translated text for quick lookup
+    # This assumes that the `paragraph_index` was correctly stored during preprocessing
+    translation_map = {
+        seg['paragraph_index']: seg['translation'] 
+        for seg in translated_segments if 'paragraph_index' in seg
+    }
     
-    # Iterate through paragraphs in the original document
-    para_idx_to_translate = 0
-    for para in original_doc.paragraphs:
-        if para.text.strip(): # If the paragraph is not empty
-            if para_idx_to_translate < len(translated_para_texts):
-                # Clear existing runs in the paragraph
-                for run in para.runs:
-                    run.text = ''
-                # Add the translated text in a single new run
-                # This preserves paragraph-level formatting but not inline formatting.
-                para.add_run(translated_para_texts[para_idx_to_translate])
-                para_idx_to_translate += 1
-            else:
-                logger.warning("More non-empty paragraphs in original doc than translated segments. Some text may not be translated.")
-                break
+    # Iterate through all paragraphs in the original document with their index
+    for i, para in enumerate(original_doc.paragraphs):
+        # Check if this paragraph's index is in our translation map
+        if i in translation_map:
+            # This paragraph was translated, so we need to replace its content
+            translated_text = translation_map[i]
+            
+            # Clear existing content (runs) in the paragraph
+            # We clear runs instead of just `para.text = ''` to better handle complex docs
+            for run in para.runs:
+                run.clear()
+
+            # Add the translated text in a single new run
+            # This preserves paragraph-level formatting (like alignment, indentation)
+            # but will lose inline formatting (like bold, italic within the para).
+            # A more advanced implementation would map segment to run, but this is robust.
+            para.add_run(translated_text)
+            
+    logger.info(f"Finished updating {len(translation_map)} paragraphs with translated content.")
 
     try:
         original_doc.save(output_path)

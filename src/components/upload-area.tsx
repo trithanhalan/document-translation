@@ -14,9 +14,9 @@ import { Button } from "@/components/ui/button";
 import { FileUp, File, X, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
-import { useFirebase, initiateAnonymousSignIn, addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase";
+import { useFirebase, initiateAnonymousSignIn } from "@/firebase";
 import { getStorage, ref, uploadBytesResumable, UploadTask, UploadTaskSnapshot } from "firebase/storage";
-import { collection, serverTimestamp, doc, DocumentReference, updateDoc } from "firebase/firestore";
+import { collection, serverTimestamp, doc, DocumentReference, updateDoc, addDoc } from "firebase/firestore";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { LANGUAGES } from "@/lib/constants";
 
@@ -81,7 +81,8 @@ export function UploadArea() {
     let taskDocRef: DocumentReference;
 
     try {
-        taskDocRef = await addDocumentNonBlocking(collection(firestore, "translationTasks"), {
+        // Use awaited addDoc to ensure we get the document reference before proceeding
+        taskDocRef = await addDoc(collection(firestore, "translationTasks"), {
             fileName: file.name,
             status: 'uploading',
             progress: 0,
@@ -114,8 +115,9 @@ export function UploadArea() {
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
         setUploadProgress(progress);
         const progressDocRef = doc(firestore, "translationTasks", taskId);
-        // Use awaited updateDoc for better reliability on progress updates
+        
         try {
+            // Awaited updateDoc for better reliability
             updateDoc(progressDocRef, { progress: Math.round(progress * 0.2) }); // Upload is 20% of the work
         } catch (e) {
             console.warn("Could not update progress", e);
@@ -123,16 +125,22 @@ export function UploadArea() {
       },
       (error: any) => {
         console.error("Upload failed:", error);
+        const failedDocRef = doc(firestore, "translationTasks", taskId);
         if (error.code !== 'storage/canceled') {
           toast({
             variant: "destructive",
             title: "Upload Failed",
             description: `An error occurred: ${error.message}`,
           });
-          const failedDocRef = doc(firestore, "translationTasks", taskId);
-          updateDocumentNonBlocking(failedDocRef, { status: 'failed', errors: ['Upload failed: ' + error.code] });
+          updateDoc(failedDocRef, { status: 'failed', errors: ['Upload failed: ' + error.code], progress: 0 });
+        } else {
+            // If canceled, we can just delete the task doc
+            // deleteDoc(failedDocRef);
+            updateDoc(failedDocRef, { status: 'failed', errors: ['Upload canceled by user.'], progress: 0 });
         }
         setIsUploading(false);
+        setFiles([]);
+        setUploadTask(null);
       },
       async () => {
         toast({
@@ -140,13 +148,9 @@ export function UploadArea() {
           description: "File is now queued for translation.",
         });
         const successDocRef = doc(firestore, "translationTasks", taskId);
-        // Set status to pending to trigger backend processing
-        updateDocumentNonBlocking(successDocRef, { status: 'pending', progress: 20 });
+        await updateDoc(successDocRef, { status: 'pending', progress: 20 });
         
-        // **NEW**: Trigger the FastAPI backend
         try {
-          // This assumes the backend is running on port 8000.
-          // In a real app, this URL would come from an environment variable.
           const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
           const response = await fetch(`${backendUrl}/process`, {
             method: 'POST',
@@ -174,7 +178,7 @@ export function UploadArea() {
              description: `Could not start the translation process: ${error.message}`,
            });
            const failedDocRef = doc(firestore, "translationTasks", taskId);
-           updateDocumentNonBlocking(failedDocRef, { status: 'failed', errors: ['Backend trigger failed: ' + error.message] });
+           await updateDoc(failedDocRef, { status: 'failed', errors: ['Backend trigger failed: ' + error.message] });
         }
 
         setIsUploading(false);
@@ -321,3 +325,5 @@ export function UploadArea() {
     </Card>
   );
 }
+
+    

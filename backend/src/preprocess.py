@@ -70,14 +70,15 @@ def process_docx(file_path):
     segments = []
     seg_id = 1
     
-    for para in doc.paragraphs:
+    # Iterate through paragraphs with their index
+    for i, para in enumerate(doc.paragraphs):
         if para.text.strip():
             cleaned = clean_text(para.text)
             segments.append({
                 "id": f"seg_{seg_id}",
                 "sourceText": cleaned,
                 "translation": "",
-                "paragraph_index": len(doc.paragraphs) - 1 # Store index for reassembly
+                "paragraph_index": i # Store the actual index of the paragraph
             })
             seg_id += 1
             
