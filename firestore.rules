@@ -1,72 +1,87 @@
 /**
- * @file Overview
- * This ruleset enforces a user-ownership model for translation tasks,
- * where each task is associated with a specific user.
- * Glossaries are currently public but the structure supports restricted access.
+ * @file Firestore Security Rules
+ * @description This ruleset enforces a user-ownership model for translation tasks,
+ *              allowing only the owner to read, update, or delete their own tasks.
+ *              Glossaries are currently public, but can be restricted in the future.
  *
- * @dataStructure
- * - /translationTasks/{taskId}: Stores translation task documents, accessible only to the owner.
- * - /glossaries/{glossaryId}: Stores glossary documents, publicly accessible.
+ * Data Structure:
+ * - /translationTasks/{taskId}: Contains TranslationTask documents, each owned by a specific user.
+ * - /glossaries/{glossaryId}: Contains Glossary documents, currently publicly accessible.
  *
- * @keySecurityDecisions
- * - Users can only create, update, or delete their own translation tasks.
- * - Listing translation tasks is allowed only for the owner.
- * - Glossaries are publicly readable.
- * - The `ownerUid` field in `translationTasks` is immutable after creation.
+ * Key Security Decisions:
+ * - Translation tasks are strictly controlled by the owner. Only the owner can create, read, update, or delete a task.
+ * - Public listing of translation tasks is disallowed to prevent unauthorized access to private user data.
+ * - Glossaries are currently publicly readable. This can be changed by adding an `ownerUid` field and updating the rules.
  *
- * @denormalizationForAuthorization
- * - The `translationTasks` documents include an `ownerUid` field, which allows the security rules to quickly verify ownership without additional reads.
+ * Denormalization for Authorization:
+ * - Each TranslationTask document has an `ownerUid` field, allowing us to quickly verify ownership without additional reads.
  *
- * @structuralSegregation
- * - Public glossaries are stored in a top-level collection.
+ * Structural Segregation:
+ * - No structural segregation is used. All translation tasks are stored in a single collection, with access controlled by the `ownerUid` field.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Manages access to individual translation tasks.
+     * @description Controls access to translation task documents.
      * @path /translationTasks/{taskId}
-     * @allow (create) User with UID 'user123' can create a task with ownerUid: 'user123'.
-     * @allow (update) User with UID 'user123' can update a task they own.
-     * @allow (delete) User with UID 'user123' can delete a task they own.
-     * @deny (create) User with UID 'user456' cannot create a task with ownerUid: 'user123'.
-     * @deny (update) User with UID 'user456' cannot update a task owned by 'user123'.
-     * @deny (delete) User with UID 'user456' cannot delete a task owned by 'user123'.
-     * @principle Enforces document ownership for writes.
+     * @allow (create) User with UID 'user123' can create a translation task with ownerUid: 'user123'.
+     * @allow (get) User with UID 'user123' can read a translation task they own.
+     * @allow (update) User with UID 'user123' can update a translation task they own.
+     * @allow (delete) User with UID 'user123' can delete a translation task they own.
+     * @deny (create) User with UID 'user456' cannot create a translation task with ownerUid: 'user123'.
+     * @deny (get) User with UID 'user456' cannot read a translation task owned by 'user123'.
+     * @deny (update) User with UID 'user456' cannot update a translation task owned by 'user123'.
+     * @deny (delete) User with UID 'user456' cannot delete a translation task owned by 'user123'.
+     * @deny (list) All users are denied the ability to list all translation tasks.
+     * @principle Enforces document ownership for writes. Prevents unauthorized access to translation tasks.
      */
     match /translationTasks/{taskId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
+      // Allow the owner to read their own translation task
+      allow get: if isSignedIn() && isOwner(resource.data.ownerUid);
 
-      function isOwner(ownerUid) {
-        return isSignedIn() && request.auth.uid == ownerUid;
-      }
+      // Prevent listing of translation tasks
+      allow list: if false;
 
-      function isExistingOwner(ownerUid) {
-        return isOwner(ownerUid) && resource != null;
-      }
+      // Allow creating a translation task if the ownerUid matches the user's ID
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
 
-      allow get: if true;
-      allow list: if isSignedIn() && isOwner(request.auth.uid);
-      allow create: if isSignedIn() && isOwner(request.resource.data.ownerUid);
-      allow update: if isExistingOwner(resource.data.ownerUid) && request.resource.data.ownerUid == resource.data.ownerUid;
-      allow delete: if isExistingOwner(resource.data.ownerUid);
+      // Allow updates if the user is the owner and the document exists. Enforce immutability of ownerUid.
+      allow update: if isSignedIn() && isExistingOwner(resource.data.ownerUid) && (request.resource.data.ownerUid == resource.data.ownerUid);
+
+      // Allow deletion if the user is the owner and the document exists
+      allow delete: if isSignedIn() && isExistingOwner(resource.data.ownerUid);
     }
 
     /**
-     * @description Manages access to glossaries. Currently allows public read access.
+     * @description Controls access to glossary documents. Currently allows public read access.
      * @path /glossaries/{glossaryId}
-     * @allow (get) Any user can read a glossary.
-     * @allow (list) Any user can list glossaries.
-     * @deny (create) No one can create glossaries. // TODO: Add owner validation once the schema is updated with an ownership field.
-     * @deny (update) No one can update glossaries. // TODO: Add owner validation once the schema is updated with an ownership field.
-     * @deny (delete) No one can delete glossaries. // TODO: Add owner validation once the schema is updated with an ownership field.
+     * @allow (get, list) All users can read glossary documents.
+     * @deny (create, update, delete) All create, update and delete operations are denied.
+     * @principle Allows public read access to glossaries. Write operations are disabled.
      */
     match /glossaries/{glossaryId} {
+      // Allow anyone to read glossaries
       allow get, list: if true;
-      allow create, update, delete: if false; // TODO: Add owner validation once the schema is updated with an ownership field.
+
+      // Disallow creating, updating, or deleting glossaries for now
+      allow create, update, delete: if false;
     }
+  }
+
+  // Helper function to check if the user is signed in
+  function isSignedIn() {
+    return request.auth != null;
+  }
+
+  // Helper function to check if the user is the owner of the document
+  function isOwner(ownerUid) {
+    return request.auth.uid == ownerUid;
+  }
+
+  // Helper function to check if the user is the owner of the document and the document exists
+  function isExistingOwner(ownerUid) {
+    return isOwner(ownerUid) && resource != null;
   }
 }
