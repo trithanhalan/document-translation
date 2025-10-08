@@ -30,7 +30,7 @@ def process_translation_task(cloud_event):
         print(f"Error: Task {task_id} not found in Firestore.")
         return
 
-    update_task_status(task_ref, 'processing', 10)
+    update_task_status(task_ref, 'processing', 10, message="Task received by worker.")
 
     # 2. Download original file from Cloud Storage
     bucket_name = os.environ.get('GCS_BUCKET') # You need to set this env var
@@ -45,42 +45,42 @@ def process_translation_task(cloud_event):
         temp_file_path = f"/tmp/{file_name}"
         source_blob.download_to_filename(temp_file_path)
         print(f"Downloaded {file_name} to {temp_file_path}")
-        update_task_status(task_ref, 'processing', 25)
+        update_task_status(task_ref, 'processing', 25, message="Downloaded source file.")
     except Exception as e:
         print(f"Error downloading file: {e}")
-        update_task_status(task_ref, 'failed', error_message=str(e))
+        update_task_status(task_ref, 'failed', error_message=f"Failed to download file from Storage: {e}")
         return
 
     # 3. Extract text from the document
     try:
         text_content = extract_text(temp_file_path, file_name)
-        update_task_status(task_ref, 'processing', 50)
+        update_task_status(task_ref, 'processing', 50, message="Extracted text from document.")
     except Exception as e:
         print(f"Error extracting text: {e}")
         update_task_status(task_ref, 'failed', error_message=f"Text extraction failed: {e}")
         return
 
-    # 4. Translate text (stubbed)
+    # 4. Translate text
     try:
         translated_text = translate_text(
             text_content,
             task_data['srcLang'],
             task_data['tgtLang']
         )
-        update_task_status(task_ref, 'processing', 75)
+        update_task_status(task_ref, 'processing', 75, message="Translation complete.")
     except Exception as e:
         print(f"Error during translation: {e}")
         update_task_status(task_ref, 'failed', error_message=f"Translation failed: {e}")
         return
         
-    # 5. Generate output files (stubbed for TXT)
+    # 5. Generate output files
     try:
         output_paths = generate_outputs(
             task_id,
             translated_text,
             bucket_name
         )
-        update_task_status(task_ref, 'completed', 100, outputs=output_paths)
+        update_task_status(task_ref, 'completed', 100, outputs=output_paths, message="Processing complete.")
     except Exception as e:
         print(f"Error generating output files: {e}")
         update_task_status(task_ref, 'failed', error_message=f"Output generation failed: {e}")
@@ -88,7 +88,7 @@ def process_translation_task(cloud_event):
         
     print(f"Task {task_id} completed successfully.")
 
-def update_task_status(task_ref, status, progress, outputs=None, error_message=None):
+def update_task_status(task_ref, status, progress, outputs=None, error_message=None, message=None):
     """Updates the task document in Firestore."""
     update_data = {
         'status': status,
@@ -99,6 +99,9 @@ def update_task_status(task_ref, status, progress, outputs=None, error_message=N
         update_data['outputs'] = outputs
     if error_message:
         update_data['errors'] = firestore.ArrayUnion([error_message])
+    if message:
+        # Optional: Add a field for human-readable progress messages
+        update_data['lastMessage'] = message
     task_ref.update(update_data)
     print(f"Updated task {task_ref.id} to status: {status}, progress: {progress}%")
 
@@ -147,20 +150,18 @@ def translate_text(text, src_lang, tgt_lang):
         # return response.json()['choices'][0]['message']['content']
         return f"[Mock OpenAI Translation]: {text}"
     else:
-        # Stub for internal FastAPI translation service
-        print(f"Using internal translation service at {TRANSLATION_API_URL}")
-        # response = requests.post(TRANSLATION_API_URL, json={
-        #     "text": text, "source_lang": src_lang, "target_lang": tgt_lang
-        # })
-        # response.raise_for_status()
-        # return response.json()['translation']
-        return f"[Mock Internal Translation]: {text}"
+        # As per the guide, using mock fallback for immediate demo.
+        print("Using mock translation fallback.")
+        # This creates an obvious, reversed-word mock translation.
+        reversed_text = " ".join(reversed(text.split()))
+        return f"[MOCK] {reversed_text}"
+
 
 def generate_outputs(task_id, translated_text, bucket_name):
     """Generates output files and uploads them to Storage."""
     output_paths = {}
     
-    # Generate TXT (fallback)
+    # Generate TXT (main fallback)
     txt_file_path = f"/tmp/{task_id}_output.txt"
     with open(txt_file_path, "w", encoding="utf-8") as f:
         f.write(translated_text)
@@ -169,14 +170,17 @@ def generate_outputs(task_id, translated_text, bucket_name):
     upload_blob(bucket_name, txt_file_path, txt_blob_path)
     output_paths["txt"] = txt_blob_path
     
-    # Stub for DOCX generation
-    # doc = docx.Document()
-    # doc.add_paragraph(translated_text)
-    # docx_file_path = f"/tmp/{task_id}_output.docx"
-    # doc.save(docx_file_path)
-    # docx_blob_path = f"results/{task_id}/output.docx"
-    # upload_blob(bucket_name, docx_file_path, docx_blob_path)
-    # output_paths["docx"] = docx_blob_path
+    # Generate DOCX
+    try:
+        doc = docx.Document()
+        doc.add_paragraph(translated_text)
+        docx_file_path = f"/tmp/{task_id}_output.docx"
+        doc.save(docx_file_path)
+        docx_blob_path = f"results/{task_id}/output.docx"
+        upload_blob(bucket_name, docx_file_path, docx_blob_path)
+        output_paths["docx"] = docx_blob_path
+    except Exception as e:
+        print(f"Could not generate DOCX file: {e}")
 
     # Stub for PDF generation
     # ... logic to convert HTML to PDF ...

@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import type { TranslationTask } from '@/lib/types';
+import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
+import { collection, query, where } from 'firebase/firestore';
 import {
   Card,
   CardContent,
@@ -31,7 +33,6 @@ import {
 import { Progress } from './ui/progress';
 import { formatDistanceToNow } from 'date-fns';
 import { Skeleton } from './ui/skeleton';
-import { mockTasks } from '@/lib/mock-data';
 
 const statusIcons: { [key in TranslationTask['status']]: React.ReactNode } = {
   pending: <Hourglass className="text-yellow-500" />,
@@ -52,17 +53,17 @@ const statusColors: { [key in TranslationTask['status']]: string } = {
 };
 
 export function TranslationTasks() {
-    const [tasks, setTasks] = useState<TranslationTask[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+  const { firestore, user } = useFirebase();
 
-    useEffect(() => {
-        // Using mock data to avoid Firestore permission errors for now
-        setTimeout(() => {
-            setTasks(mockTasks);
-            setIsLoading(false);
-        }, 1000);
-    }, []);
+  const tasksQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return query(
+      collection(firestore, 'translationTasks'),
+      where('ownerUid', '==', user.uid)
+    );
+  }, [firestore, user]);
 
+  const { data: tasks, isLoading, error } = useCollection<TranslationTask>(tasksQuery);
 
   return (
     <Card className="shadow-lg border-0">
@@ -146,6 +147,13 @@ export function TranslationTasks() {
                 <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground h-24">
                         No translation jobs found. Upload a document to get started.
+                    </TableCell>
+                </TableRow>
+            )}
+             {error && (
+                <TableRow>
+                    <TableCell colSpan={6} className="text-center text-destructive h-24">
+                        Error loading tasks: {error.message}
                     </TableCell>
                 </TableRow>
             )}

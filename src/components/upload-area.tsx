@@ -14,15 +14,15 @@ import { Button } from "@/components/ui/button";
 import { FileUp, File, X, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
-import { useFirebase, initiateAnonymousSignIn } from "@/firebase";
+import { useFirebase, initiateAnonymousSignIn, addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase";
 import { getStorage, ref, uploadBytesResumable, UploadTask } from "firebase/storage";
-import { collection, addDoc, serverTimestamp, updateDoc, doc, DocumentReference } from "firebase/firestore";
+import { collection, serverTimestamp, doc, DocumentReference } from "firebase/firestore";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { LANGUAGES } from "@/lib/constants";
 
 export function UploadArea() {
   const { toast } = useToast();
-  const { firestore, user, auth } = useFirebase();
+  const { firestore, user, auth, isUserLoading } = useFirebase();
   const [files, setFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -30,13 +30,12 @@ export function UploadArea() {
   const [sourceLang, setSourceLang] = useState("en");
   const [targetLang, setTargetLang] = useState("de");
 
-
   useEffect(() => {
-    // Sign in anonymously if no user is present
-    if (!user && auth) {
+    // Sign in anonymously if no user is present after initial auth check
+    if (!isUserLoading && !user && auth) {
       initiateAnonymousSignIn(auth);
     }
-  }, [user, auth, toast]);
+  }, [user, auth, isUserLoading]);
 
   const onDrop = useCallback(
     (acceptedFiles: File[], fileRejections: any[]) => {
@@ -68,21 +67,13 @@ export function UploadArea() {
 
   const handleUpload = async () => {
     if (files.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "No file selected",
-        description: "Please select a file to upload.",
-      });
+      toast({ variant: "destructive", title: "No file selected", description: "Please select a file to upload." });
       return;
     }
-    if (!user) {
-        toast({
-          variant: "destructive",
-          title: "Authentication Error",
-          description: "You must be logged in to upload files.",
-        });
-        return;
-      }
+    if (!user || !firestore) {
+      toast({ variant: "destructive", title: "Authentication Error", description: "You must be signed in to upload files." });
+      return;
+    }
 
     setIsUploading(true);
     setUploadProgress(0);
@@ -91,8 +82,8 @@ export function UploadArea() {
     let taskDocRef: DocumentReference;
 
     try {
-        // 1. Create a task document in Firestore
-        taskDocRef = await addDoc(collection(firestore, "translationTasks"), {
+        // 1. Create a task document in Firestore to get an ID
+        taskDocRef = await addDocumentNonBlocking(collection(firestore, "translationTasks"), {
             fileName: file.name,
             status: 'uploading',
             progress: 0,
@@ -102,12 +93,12 @@ export function UploadArea() {
             sourceLang: sourceLang, 
             targetLang: targetLang,
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error creating translation task:", error);
         toast({
           variant: "destructive",
           title: "Task Creation Failed",
-          description: "Could not create the translation task in the database.",
+          description: `Could not create the translation task in the database. ${error.message}`,
         });
         setIsUploading(false);
         return;
@@ -128,9 +119,7 @@ export function UploadArea() {
             setUploadProgress(progress);
             // This doc() call might fail if rules aren't set up for update, but it's just for progress.
             const progressDocRef = doc(firestore, "translationTasks", taskId);
-            updateDoc(progressDocRef, { progress: Math.round(progress * 0.5) }).catch(err => {
-              console.warn("Could not update progress", err.message);
-            });
+            updateDocumentNonBlocking(progressDocRef, { progress: Math.round(progress * 0.5) });
         },
         (error) => {
             console.error("Upload failed:", error);
@@ -140,19 +129,18 @@ export function UploadArea() {
                 description: `An error occurred while uploading the file: ${error.message}`,
             });
             const failedDocRef = doc(firestore, "translationTasks", taskId);
-            updateDoc(failedDocRef, { status: 'failed', errors: ['Upload failed: ' + error.code] }).catch(err => {
-              console.warn("Could not update task to failed status", err.message);
-            });
+            updateDocumentNonBlocking(failedDocRef, { status: 'failed', errors: ['Upload failed: ' + error.code] });
             setIsUploading(false);
         },
         () => {
-            // 3. On successful upload
+            // 3. On successful upload, update status to 'pending' for the worker to pick up
             toast({
                 title: "Upload Complete",
                 description: `${file.name} is now queued for processing.`,
             });
             const successDocRef = doc(firestore, "translationTasks", taskId);
-            updateDoc(successDocRef, { status: 'pending', progress: 50 });
+            // This is the trigger for the cloud function
+            updateDocumentNonBlocking(successDocRef, { status: 'pending', progress: 50 });
             setIsUploading(false);
             setFiles([]);
             setUploadTask(null);
@@ -208,7 +196,7 @@ export function UploadArea() {
                 <label className="text-sm font-medium text-muted-foreground">
                   Source Language
                 </label>
-                <Select value={sourceLang} onValueChange={setSourceLang}>
+                <Select value={sourceLang} onValueChange={setSourceLang} disabled={isUploading}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select language" />
                   </SelectTrigger>
@@ -225,7 +213,7 @@ export function UploadArea() {
                 <label className="text-sm font-medium text-muted-foreground">
                   Target Language
                 </label>
-                <Select value={targetLang} onValueChange={setTargetLang}>
+                <Select value={targetLang} onValueChange={setTargetLang} disabled={isUploading}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select language" />
                   </SelectTrigger>
@@ -266,7 +254,10 @@ export function UploadArea() {
               </div>
             )}
             {!isUploading && files.length > 0 && (
-              <Button onClick={handleUpload} className="w-full sm:w-auto" disabled={!user}>
+              <Button onClick={handleUpload} className="w-full sm:w-auto" disabled={!user || isUserLoading}>
+                 {isUserLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                 ) : null}
                 Start Translation
               </Button>
             )}

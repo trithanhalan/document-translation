@@ -141,7 +141,7 @@ export function TranslationView() {
               <div className="flex items-center justify-between mb-2">
                 <Badge variant="secondary">Source ({sourceLang.toUpperCase()})</Badge>
               </div>
-              <div className="rounded-md border bg-muted/50 p-4 min-h-[200px] text-sm text-muted-foreground prose prose-sm max-w-none">
+              <div className="rounded-md border bg-background p-4 min-h-[200px]">
                  <Textarea
                     value={sourceText}
                     onChange={(e) => setSourceText(e.target.value)}

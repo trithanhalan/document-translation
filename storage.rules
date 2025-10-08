@@ -2,10 +2,21 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow public read and write access for debugging purposes.
-    // WARNING: This is insecure and should be locked down before production.
-    match /{allPaths=**} {
-      allow read, write;
+    // Allow uploads only for authenticated users into a folder matching their taskId
+    // The client will generate a taskId, create a firestore doc, then upload to this path.
+    match /uploads/{taskId}/{fileName} {
+      // The user must be authenticated.
+      // The uploaded file's name must match the name in the path.
+      // The user must be the owner of the corresponding Firestore task document.
+      allow write: if request.auth != null
+                    && resource.name == fileName
+                    && get(/databases/$(database)/documents/translationTasks/$(taskId)).data.ownerUid == request.auth.uid;
+    }
+
+    // Allow reads for results only by the owner of the task.
+    match /results/{taskId}/{fileName} {
+      allow read: if request.auth != null
+                   && get(/databases/$(database)/documents/translationTasks/$(taskId)).data.ownerUid == request.auth.uid;
     }
   }
 }
