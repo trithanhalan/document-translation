@@ -118,6 +118,7 @@ export function UploadArea() {
       },
       (error: any) => {
         console.error("Upload failed:", error);
+        // It's normal for this to be called on cancellation.
         if (error.code !== 'storage/canceled') {
           toast({
             variant: "destructive",
@@ -135,13 +136,12 @@ export function UploadArea() {
           description: "File is now queued for translation.",
         });
         const successDocRef = doc(firestore, "translationTasks", taskId);
-        // Set status to pending to trigger backend processing
+        
+        // **NEW**: Set status to 'pending' to trigger backend processing
         updateDocumentNonBlocking(successDocRef, { status: 'pending', progress: 20 });
         
-        // **NEW**: Trigger the FastAPI backend
         try {
-          // This assumes the backend is running on port 8000.
-          // In a real app, this URL would come from an environment variable.
+          // This assumes the backend is running.
           const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
           const response = await fetch(`${backendUrl}/process`, {
             method: 'POST',
@@ -316,5 +316,3 @@ export function UploadArea() {
     </Card>
   );
 }
-
-    
