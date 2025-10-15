@@ -2,10 +2,6 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { cn } from '@/lib/utils';
 import { Toaster } from '@/components/ui/toaster';
-import { SidebarProvider } from '@/components/ui/sidebar';
-import { AppSidebar } from '@/components/app-sidebar';
-import { AppHeader } from '@/components/app-header';
-import { FirebaseClientProvider } from '@/firebase';
 
 export const metadata: Metadata = {
   title: 'LinguaFlow',
@@ -28,16 +24,10 @@ export default function RootLayout({
         />
       </head>
       <body className={cn('font-body antialiased', 'min-h-screen bg-background font-sans')}>
-        <FirebaseClientProvider>
-          <SidebarProvider>
-            <AppSidebar />
-            <main className="md:pl-12 lg:pl-[var(--sidebar-width)]">
-              <AppHeader />
-              <div className="p-4 lg:p-8">{children}</div>
-            </main>
-          </SidebarProvider>
-          <Toaster />
-        </FirebaseClientProvider>
+          <main>
+            <div className="p-4 lg:p-8">{children}</div>
+          </main>
+        <Toaster />
       </body>
     </html>
   );
